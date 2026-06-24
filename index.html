@@ -62,6 +62,8 @@ const state = {
   flashQueue: [], flashIdx: 0, flashFlipped: false,
   score: { got: 0, missed: 0 },
   voices: [],
+  allVoices: [],
+  showAllVoices: false,
 };
 
 // ── Groq chat ───────────────────────────────────────────────────────────────
@@ -143,7 +145,8 @@ function updateMicButton() {
 // ── Text to speech (browser or ElevenLabs) ──────────────────────────────────
 function loadVoices() {
   if (!window.speechSynthesis) return;
-  const all = window.speechSynthesis.getVoices();
+  const all = window.speechSynthesis.getVoices() || [];
+  state.allVoices = all;
   state.voices = all.filter(v => v.lang && v.lang.toLowerCase().startsWith("de"));
 }
 let currentAudio = null;
@@ -161,13 +164,13 @@ function speakBrowser(clean) {
   if (!window.speechSynthesis) return;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(clean);
-  u.lang = "de-DE";
   u.rate = state.voiceRate || 0.9;
-  if (!state.voices.length) loadVoices();
+  const all = window.speechSynthesis.getVoices() || [];
   let v = null;
-  if (state.voiceName) v = state.voices.find(x => x.name === state.voiceName);
-  if (!v) v = state.voices.find(x => x.lang.toLowerCase().startsWith("de"));
-  if (v) u.voice = v;
+  if (state.voiceName) v = all.find(x => x.name === state.voiceName || x.voiceURI === state.voiceName);
+  if (!v) v = all.find(x => x.lang && x.lang.toLowerCase().startsWith("de"));
+  if (v) { u.voice = v; u.lang = v.lang; }
+  else { u.lang = "de-DE"; }
   window.speechSynthesis.speak(u);
 }
 async function speakEleven(clean) {
@@ -255,9 +258,12 @@ function renderSetup() {
 function renderSettings() {
   loadVoices();
   const vp = state.voiceProvider;
-  const voiceOpts = state.voices.length
-    ? `<option value="">Auto (best available)</option>` + state.voices.map(v=>`<option value="${esc(v.name)}" ${state.voiceName===v.name?"selected":""}>${esc(v.name)} (${esc(v.lang)})</option>`).join("")
-    : `<option value="">No German voices found — install one in iOS Settings</option>`;
+  const list = state.showAllVoices ? state.allVoices : state.voices;
+  const voiceOpts = list.length
+    ? `<option value="">Auto (best available)</option>` + list.map(v=>`<option value="${esc(v.name)}" ${state.voiceName===v.name?"selected":""}>${esc(v.name)} — ${esc(v.lang)}${v.localService===false?" ☁️":""}</option>`).join("")
+    : `<option value="">No voices exposed yet — tap Refresh</option>`;
+  const germanCount = state.voices.length;
+  const totalCount = state.allVoices.length;
   const provBtn = (id,label) => `<button data-vprov="${id}" style="flex:1;padding:10px 8px;border-radius:10px;border:2px solid ${vp===id?C.amber:C.border};background:${vp===id?C.amber+"18":C.card};color:${vp===id?C.amber:C.text};font-weight:600;font-size:13px;cursor:pointer;">${label}</button>`;
   return `
   <div style="display:flex;flex-direction:column;height:100vh;">
@@ -293,9 +299,16 @@ function renderSettings() {
         </div>
 
         <div id="browser-voice-block" class="${vp==="browser"?"":"hidden"}" style="margin-bottom:16px;">
-          <div style="color:${C.muted};font-size:12px;margin-bottom:6px;">German Voice</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <span style="color:${C.muted};font-size:12px;">Voice ${state.showAllVoices?`(all ${totalCount})`:`(${germanCount} German)`}</span>
+            <button id="refresh-voices" style="background:${C.card};border:1px solid ${C.border};color:${C.amber};border-radius:8px;padding:4px 10px;font-size:11px;cursor:pointer;">↻ Refresh</button>
+          </div>
           <select id="voice-select">${voiceOpts}</select>
-          <div style="font-size:11px;color:${C.dimmed};margin-top:6px;line-height:1.5;">For the most natural voice on iPhone: Settings → Accessibility → Spoken Content → Voices → German → download <b>Anna (Premium)</b>, then pick it here.</div>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
+            <input type="checkbox" id="all-voices" ${state.showAllVoices?"checked":""} style="width:16px;height:16px;accent-color:${C.amber};" />
+            <span style="color:${C.muted};font-size:12px;">Show all languages (☁️ = cloud/enhanced)</span>
+          </label>
+          <div style="font-size:11px;color:${C.dimmed};margin-top:8px;line-height:1.5;">If your downloaded German voice (e.g. Markus Enhanced) isn't listed, Safari isn't exposing it to web apps — a known iOS limit. Tap Refresh after downloading; if it still won't appear, use ElevenLabs for premium German.</div>
         </div>
 
         <div id="eleven-block" class="${vp==="elevenlabs"?"":"hidden"}" style="margin-bottom:16px;">
@@ -437,6 +450,8 @@ function attachHandlers() {
   const gm=document.getElementById("groq-model"); if(gm)gm.oninput=()=>{state.groqModel=gm.value.trim();persist();};
   document.querySelectorAll("[data-vprov]").forEach(b=>b.onclick=()=>{state.voiceProvider=b.dataset.vprov;persist();render();});
   const vs=document.getElementById("voice-select"); if(vs)vs.onchange=()=>{state.voiceName=vs.value;persist();};
+  const rfv=document.getElementById("refresh-voices"); if(rfv)rfv.onclick=()=>{ if(window.speechSynthesis){window.speechSynthesis.cancel();} loadVoices(); render(); };
+  const av=document.getElementById("all-voices"); if(av)av.onchange=()=>{state.showAllVoices=av.checked;render();};
   const ek=document.getElementById("eleven-key"); if(ek)ek.oninput=()=>{state.elevenKey=ek.value.trim();persist();};
   const ev=document.getElementById("eleven-voice"); if(ev)ev.oninput=()=>{state.elevenVoiceId=ev.value.trim();persist();};
   const vr=document.getElementById("voice-rate"); if(vr)vr.oninput=()=>{state.voiceRate=parseFloat(vr.value);persist();const lbl=vr.parentElement.querySelector("span span");if(lbl)lbl.textContent=state.voiceRate.toFixed(2)+"×";};
