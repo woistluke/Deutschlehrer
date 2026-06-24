@@ -64,6 +64,7 @@ const state = {
   voices: [],
   allVoices: [],
   showAllVoices: false,
+  voiceError: "",
 };
 
 // ── Groq chat ───────────────────────────────────────────────────────────────
@@ -156,7 +157,11 @@ async function speak(text) {
   if (!clean) return;
   if (state.voiceProvider === "elevenlabs" && state.elevenKey) {
     try { await speakEleven(clean); return; }
-    catch (e) { /* fall through to browser */ }
+    catch (e) {
+      state.voiceError = e.message;
+      if (state.screen === "settings") render();
+      // fall through to browser so you still hear something
+    }
   }
   speakBrowser(clean);
 }
@@ -317,6 +322,7 @@ function renderSettings() {
           <div style="font-size:11px;color:${C.muted};margin-top:6px;">Key at <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" style="color:${C.amber};">elevenlabs.io</a> · uses multilingual model for German.</div>
           <div style="margin-top:10px;"><div style="color:${C.muted};font-size:12px;margin-bottom:6px;">Voice ID</div>
           <input id="eleven-voice" type="text" value="${esc(state.elevenVoiceId)}" placeholder="voice id" style="width:100%;background:${C.card};border:1px solid ${C.border};border-radius:10px;padding:9px 14px;color:${C.text};font-size:13px;font-family:inherit;" /></div>
+          ${state.voiceError?`<div style="margin-top:10px;background:rgba(224,92,92,.12);border:1px solid ${C.red}44;color:${C.red};padding:8px 12px;border-radius:8px;font-size:12px;">⚠️ ${esc(state.voiceError)}</div>`:""}
         </div>
 
         <div class="${vp==="off"?"hidden":""}" style="margin-bottom:16px;">
@@ -456,7 +462,17 @@ function attachHandlers() {
   const ev=document.getElementById("eleven-voice"); if(ev)ev.oninput=()=>{state.elevenVoiceId=ev.value.trim();persist();};
   const vr=document.getElementById("voice-rate"); if(vr)vr.oninput=()=>{state.voiceRate=parseFloat(vr.value);persist();const lbl=vr.parentElement.querySelector("span span");if(lbl)lbl.textContent=state.voiceRate.toFixed(2)+"×";};
   const at=document.getElementById("auto-toggle"); if(at)at.onclick=()=>{state.autoSpeak=!state.autoSpeak;persist();render();};
-  const tv=document.getElementById("test-voice"); if(tv)tv.onclick=()=>speak("Hallo! Schön, dich kennenzulernen. Lass uns Deutsch üben.");
+  const tv=document.getElementById("test-voice"); if(tv)tv.onclick=async()=>{
+    state.voiceError="";
+    const sample="Hallo! Schön, dich kennenzulernen. Lass uns Deutsch üben.";
+    if(state.voiceProvider==="elevenlabs"&&state.elevenKey){
+      tv.textContent="Testing ElevenLabs…";
+      try{ await speakEleven(sample); tv.textContent="🔊 Test voice (ElevenLabs ✓)"; }
+      catch(e){ state.voiceError=e.message; render(); }
+    } else {
+      speakBrowser(sample);
+    }
+  };
 
   // chat
   const back=document.getElementById("back-setup"); if(back)back.onclick=()=>{state.screen="setup";state.messages=[];state.error="";render();};
