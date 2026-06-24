@@ -53,6 +53,7 @@ const state = {
   openaiKey: localStorage.getItem("openai_key") || "",
   openaiVoice: localStorage.getItem("openai_voice") || "nova",
   openaiModel: localStorage.getItem("openai_model") || "gpt-4o-mini-tts",
+  transcribeModel: localStorage.getItem("transcribe_model") || "gpt-4o-mini-transcribe",
   autoSpeak: localStorage.getItem("auto_speak") !== "false",
   // session
   level: "A2",
@@ -106,42 +107,126 @@ Respond ONLY with valid JSON (no markdown, no code fences) matching:
   "reply": "<German response, natural for ${level} level>",
   "translation": "<English translation of your reply>",
   "corrections": [{ "wrong": "<user error>", "right": "<correct>", "note": "<brief grammar note>" }],
+  "pronunciation": "<if the user's message looks like it came from speech and contains a word that seems mis-said (a word that doesn't fit context but resembles a real word), gently note the likely intended word and a pronunciation tip; otherwise empty string>",
   "tip": "<one short cultural/grammar insight, or empty string>",
   "vocab": [{ "de": "<German word/phrase>", "en": "<English meaning>" }]
 }
 Rules:
 - reply: natural German only, always end with a question to keep conversation flowing
 - corrections: only real errors (max 3), empty array if user was correct
+- pronunciation: only flag a likely mis-pronunciation when a word genuinely seems off for the context; keep it encouraging and brief; else ""
 - vocab: 1-3 useful words from YOUR reply
 - tip: only if genuinely useful, else ""
 - A1/A2: simple words, short sentences. B2/C1: complex grammar and idioms welcome.`;
 }
 
-// ── Speech recognition ──────────────────────────────────────────────────────
-let recognition = null, isListening = false;
+// ── Mic: MediaRecorder → OpenAI transcription (fallback: Web Speech) ─────────
+let recognition = null;          // browser fallback
+let mediaRecorder = null, audioChunks = [], audioStream = null;
+let micState = "idle";           // idle | recording | transcribing
+
 function initSpeech() {
+  // Set up browser Web Speech only as a fallback for when there's no OpenAI key
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return false;
   recognition = new SR();
   recognition.lang = "de-DE"; recognition.continuous = false; recognition.interimResults = false;
   recognition.onresult = (e) => { const t = e.results[0][0].transcript; const ta = document.getElementById("chat-input"); if (ta){ta.value=t;ta.focus();} };
-  recognition.onend = () => { isListening = false; updateMicButton(); };
-  recognition.onerror = () => { isListening = false; updateMicButton(); };
+  recognition.onend = () => { if (micState==="recording") micState="idle"; updateMicButton(); };
+  recognition.onerror = () => { micState="idle"; updateMicButton(); };
   return true;
 }
-function toggleMic() {
-  if (!recognition) return;
-  if (isListening) { try{recognition.stop();}catch{} isListening=false; }
-  else { try{recognition.start();isListening=true;}catch{} }
+
+function pickMime() {
+  const opts = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg"];
+  for (const o of opts) { if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(o)) return o; }
+  return "";
+}
+
+async function toggleMic() {
+  // No OpenAI key → use the old browser recognizer
+  if (!(state.openaiKey)) { toggleBrowserMic(); return; }
+
+  if (micState === "recording") { stopRecording(); return; }
+  if (micState === "transcribing") return;
+
+  // Start recording
+  try {
+    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    state.error = "Microphone blocked. Allow mic access in Safari settings (aA → Website Settings → Microphone).";
+    render(); return;
+  }
+  audioChunks = [];
+  const mime = pickMime();
+  try {
+    mediaRecorder = mime ? new MediaRecorder(audioStream, { mimeType: mime }) : new MediaRecorder(audioStream);
+  } catch { mediaRecorder = new MediaRecorder(audioStream); }
+  mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size) audioChunks.push(e.data); };
+  mediaRecorder.onstop = handleRecordingStop;
+  mediaRecorder.start();
+  micState = "recording";
   updateMicButton();
 }
+
+function stopRecording() {
+  try { mediaRecorder && mediaRecorder.stop(); } catch {}
+  try { audioStream && audioStream.getTracks().forEach(t => t.stop()); } catch {}
+  micState = "transcribing";
+  updateMicButton();
+}
+
+async function handleRecordingStop() {
+  const type = (mediaRecorder && mediaRecorder.mimeType) || "audio/mp4";
+  const blob = new Blob(audioChunks, { type });
+  if (!blob.size) { micState = "idle"; updateMicButton(); return; }
+  try {
+    const text = await transcribeAudio(blob, type);
+    const ta = document.getElementById("chat-input");
+    if (ta && text) { ta.value = (ta.value ? ta.value + " " : "") + text; ta.focus(); }
+  } catch (e) {
+    state.error = e.message;
+    render();
+  }
+  micState = "idle";
+  updateMicButton();
+}
+
+async function transcribeAudio(blob, type) {
+  const ext = type.includes("mp4") ? "mp4" : type.includes("ogg") ? "ogg" : "webm";
+  const fd = new FormData();
+  fd.append("file", blob, `speech.${ext}`);
+  fd.append("model", state.transcribeModel || "gpt-4o-mini-transcribe");
+  fd.append("language", "de");
+  fd.append("response_format", "json");
+  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${state.openaiKey}` },
+    body: fd,
+  });
+  if (!res.ok) { let d=""; try{ const j=await res.json(); d=j.error?.message||JSON.stringify(j);}catch{ try{d=await res.text();}catch{} } throw new Error(`Transcription ${res.status} — ${d.slice(0,200)}`); }
+  const data = await res.json();
+  return (data.text || "").trim();
+}
+
+function toggleBrowserMic() {
+  if (!recognition) { state.error = "No speech available. Add an OpenAI key in Settings for reliable transcription."; render(); return; }
+  if (micState === "recording") { try{recognition.stop();}catch{} micState="idle"; }
+  else { try{recognition.start();micState="recording";}catch{} }
+  updateMicButton();
+}
+
 function updateMicButton() {
   const btn = document.getElementById("mic-btn"); if (!btn) return;
-  btn.style.background = isListening ? "radial-gradient(circle,#f5a623 0%,#a86f10 100%)" : "radial-gradient(circle,#2a3050 0%,#181c27 100%)";
-  btn.style.boxShadow = isListening ? "0 0 0 6px rgba(245,166,35,.25),0 0 0 12px rgba(245,166,35,.1)" : `0 0 0 2px ${C.border}`;
-  btn.style.animation = isListening ? "pulse 1.4s infinite" : "none";
-  const fill = isListening ? "#0f1117" : C.muted;
+  const active = micState === "recording";
+  const busy = micState === "transcribing";
+  btn.style.background = active ? "radial-gradient(circle,#e05c5c 0%,#7a1f1f 100%)" : busy ? "radial-gradient(circle,#f5a623 0%,#a86f10 100%)" : "radial-gradient(circle,#2a3050 0%,#181c27 100%)";
+  btn.style.boxShadow = active ? "0 0 0 6px rgba(224,92,92,.25),0 0 0 12px rgba(224,92,92,.1)" : `0 0 0 2px ${C.border}`;
+  btn.style.animation = active ? "pulse 1.4s infinite" : "none";
+  const fill = (active||busy) ? "#0f1117" : C.muted;
   btn.querySelectorAll("svg *").forEach(el => { if (el.tagName==="rect") el.setAttribute("fill",fill); else el.setAttribute("stroke",fill); });
+  btn.title = active ? "Tap to stop & transcribe" : busy ? "Transcribing…" : "Tap to record German";
+  btn.style.opacity = busy ? "0.7" : "1";
 }
 
 // ── Text to speech (browser or OpenAI) ──────────────────────────────────
@@ -214,6 +299,7 @@ function persist(){
   localStorage.setItem("openai_key", state.openaiKey);
   localStorage.setItem("openai_voice", state.openaiVoice);
   localStorage.setItem("openai_model", state.openaiModel);
+  localStorage.setItem("transcribe_model", state.transcribeModel);
   localStorage.setItem("auto_speak", String(state.autoSpeak));
 }
 
@@ -335,6 +421,9 @@ function renderSettings() {
           <div style="margin-top:10px;"><div style="color:${C.muted};font-size:12px;margin-bottom:6px;">Model</div>
           <input id="openai-model" type="text" value="${esc(state.openaiModel)}" placeholder="gpt-4o-mini-tts" style="width:100%;background:${C.card};border:1px solid ${C.border};border-radius:10px;padding:9px 14px;color:${C.text};font-size:13px;font-family:inherit;" />
           <div style="font-size:11px;color:${C.dimmed};margin-top:4px;">gpt-4o-mini-tts (best) or tts-1-hd (stable fallback)</div></div>
+          <div style="margin-top:10px;"><div style="color:${C.muted};font-size:12px;margin-bottom:6px;">Mic transcription model</div>
+          <input id="transcribe-model" type="text" value="${esc(state.transcribeModel)}" placeholder="gpt-4o-mini-transcribe" style="width:100%;background:${C.card};border:1px solid ${C.border};border-radius:10px;padding:9px 14px;color:${C.text};font-size:13px;font-family:inherit;" />
+          <div style="font-size:11px;color:${C.dimmed};margin-top:4px;">used by the mic button · gpt-4o-mini-transcribe (cheap) or gpt-4o-transcribe (most accurate)</div></div>
           ${state.voiceError?`<div style="margin-top:10px;background:rgba(224,92,92,.12);border:1px solid ${C.red}44;color:${C.red};padding:8px 12px;border-radius:8px;font-size:12px;">⚠️ ${esc(state.voiceError)}</div>`:""}
         </div>
 
@@ -400,6 +489,7 @@ function renderBubble(m) {
     m.corrections.forEach((c,i)=>{ h += `<div style="font-size:13px;color:${C.text};margin-bottom:${i<m.corrections.length-1?4:0}px;"><span style="color:${C.red};text-decoration:line-through;">${esc(c.wrong)}</span> → <span style="color:${C.green};font-weight:600;">${esc(c.right)}</span>${c.note?`<span style="color:${C.muted};"> — ${esc(c.note)}</span>`:""}</div>`; });
     h += `</div>`;
   }
+  if (m.pronunciation) h += `<div style="max-width:78%;margin-top:4px;background:rgba(91,141,238,.1);border:1px solid rgba(91,141,238,.3);border-radius:10px;padding:8px 12px;font-size:13px;color:${C.text};">🗣️ ${esc(m.pronunciation)}</div>`;
   if (m.tip) h += `<div style="max-width:78%;margin-top:4px;font-size:12px;color:${C.muted};font-style:italic;padding-left:4px;">💡 ${esc(m.tip)}</div>`;
   if (m.translation){ const id="tr"+Math.random().toString(36).slice(2,8); h += `<div style="margin-top:4px;"><button class="trans-toggle" data-target="${id}" style="background:none;border:none;cursor:pointer;color:${C.amberDim};font-size:12px;padding:2px 4px;">show translation</button><div id="${id}" class="hidden" style="font-size:13px;color:${C.muted};font-style:italic;padding-left:4px;">${esc(m.translation)}</div></div>`; }
   if (!isUser&&m.content) h += `<button class="speak-btn" data-text="${esc(m.content)}" style="background:none;border:none;cursor:pointer;color:${C.dimmed};font-size:12px;padding:2px 4px;margin-top:2px;">🔊 listen</button>`;
@@ -474,6 +564,7 @@ function attachHandlers() {
   const ek=document.getElementById("openai-key"); if(ek)ek.oninput=()=>{state.openaiKey=ek.value.trim();persist();};
   const ovc=document.getElementById("openai-voice"); if(ovc)ovc.onchange=()=>{state.openaiVoice=ovc.value;persist();};
   const omd2=document.getElementById("openai-model"); if(omd2)omd2.oninput=()=>{state.openaiModel=omd2.value.trim();persist();};
+  const tmd=document.getElementById("transcribe-model"); if(tmd)tmd.oninput=()=>{state.transcribeModel=tmd.value.trim();persist();};
   const vr=document.getElementById("voice-rate"); if(vr)vr.oninput=()=>{state.voiceRate=parseFloat(vr.value);persist();const lbl=vr.parentElement.querySelector("span span");if(lbl)lbl.textContent=state.voiceRate.toFixed(2)+"×";};
   const at=document.getElementById("auto-toggle"); if(at)at.onclick=()=>{state.autoSpeak=!state.autoSpeak;persist();render();};
   const tv=document.getElementById("test-voice"); if(tv)tv.onclick=async()=>{
@@ -537,7 +628,7 @@ async function sendMessage(isRetry) {
     const history=state.messages.map(m=>({role:m.role,content:m.content}));
     const raw=await callGroq(history, buildSystemPrompt(state.level, state.topic));
     const p=parseResponse(raw);
-    state.messages.push({role:"model",content:p.reply||raw,translation:p.translation||"",corrections:p.corrections||[],tip:p.tip||"",vocab:p.vocab||[]});
+    state.messages.push({role:"model",content:p.reply||raw,translation:p.translation||"",corrections:p.corrections||[],pronunciation:p.pronunciation||"",tip:p.tip||"",vocab:p.vocab||[]});
     collectVocab();
     if (state.autoSpeak && p.reply) speak(p.reply);
   } catch(e){ state.error=e.message; }
