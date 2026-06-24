@@ -47,11 +47,12 @@ const state = {
   groqKey: localStorage.getItem("groq_key") || "",
   groqModel: localStorage.getItem("groq_model") || "openai/gpt-oss-120b",
   // voice
-  voiceProvider: localStorage.getItem("voice_provider") || "browser",  // browser | elevenlabs | off
+  voiceProvider: localStorage.getItem("voice_provider") || "browser",  // browser | openai | off
   voiceName: localStorage.getItem("voice_name") || "",                 // chosen browser voice
   voiceRate: parseFloat(localStorage.getItem("voice_rate") || "0.9"),
-  elevenKey: localStorage.getItem("eleven_key") || "",
-  elevenVoiceId: localStorage.getItem("eleven_voice_id") || "21m00Tcm4TlvDq8ikWAM",
+  openaiKey: localStorage.getItem("openai_key") || "",
+  openaiVoice: localStorage.getItem("openai_voice") || "nova",
+  openaiModel: localStorage.getItem("openai_model") || "gpt-4o-mini-tts",
   autoSpeak: localStorage.getItem("auto_speak") !== "false",
   // session
   level: "A2",
@@ -143,7 +144,7 @@ function updateMicButton() {
   btn.querySelectorAll("svg *").forEach(el => { if (el.tagName==="rect") el.setAttribute("fill",fill); else el.setAttribute("stroke",fill); });
 }
 
-// ── Text to speech (browser or ElevenLabs) ──────────────────────────────────
+// ── Text to speech (browser or OpenAI) ──────────────────────────────────
 function loadVoices() {
   if (!window.speechSynthesis) return;
   const all = window.speechSynthesis.getVoices() || [];
@@ -155,8 +156,8 @@ async function speak(text) {
   if (state.voiceProvider === "off") return;
   const clean = text.replace(/\[.*?\]/g,"").trim();
   if (!clean) return;
-  if (state.voiceProvider === "elevenlabs" && state.elevenKey) {
-    try { await speakEleven(clean); return; }
+  if (state.voiceProvider === "openai" && state.openaiKey) {
+    try { await speakOpenAI(clean); return; }
     catch (e) {
       state.voiceError = e.message;
       if (state.screen === "settings") render();
@@ -178,18 +179,26 @@ function speakBrowser(clean) {
   else { u.lang = "de-DE"; }
   window.speechSynthesis.speak(u);
 }
-async function speakEleven(clean) {
+async function speakOpenAI(clean) {
   if (currentAudio) { try { currentAudio.pause(); } catch {} currentAudio = null; }
-  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${state.elevenVoiceId}`, {
+  const body = {
+    model: state.openaiModel || "gpt-4o-mini-tts",
+    voice: state.openaiVoice || "nova",
+    input: clean,
+    response_format: "mp3",
+    speed: Math.max(0.5, Math.min(1.5, state.voiceRate || 1)),
+  };
+  // German hint helps the English-optimized voices
+  if ((state.openaiModel || "").startsWith("gpt-4o")) body.instructions = "Speak in natural, clear German with a native German accent.";
+  const res = await fetch("https://api.openai.com/v1/audio/speech", {
     method: "POST",
-    headers: { "xi-api-key": state.elevenKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ text: clean, model_id: "eleven_multilingual_v2", voice_settings: { stability: 0.5, similarity_boost: 0.75 } }),
+    headers: { "Authorization": `Bearer ${state.openaiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
-  if (!res.ok) { let d=""; try{d=await res.text();}catch{} throw new Error(`ElevenLabs ${res.status} — ${d.slice(0,150)}`); }
+  if (!res.ok) { let d=""; try{ const j=await res.json(); d=j.error?.message||JSON.stringify(j);}catch{ try{d=await res.text();}catch{} } throw new Error(`OpenAI ${res.status} — ${d.slice(0,200)}`); }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   currentAudio = new Audio(url);
-  currentAudio.playbackRate = state.voiceRate >= 0.5 ? state.voiceRate : 1;
   await currentAudio.play();
 }
 
@@ -202,8 +211,9 @@ function persist(){
   localStorage.setItem("voice_provider", state.voiceProvider);
   localStorage.setItem("voice_name", state.voiceName);
   localStorage.setItem("voice_rate", String(state.voiceRate));
-  localStorage.setItem("eleven_key", state.elevenKey);
-  localStorage.setItem("eleven_voice_id", state.elevenVoiceId);
+  localStorage.setItem("openai_key", state.openaiKey);
+  localStorage.setItem("openai_voice", state.openaiVoice);
+  localStorage.setItem("openai_model", state.openaiModel);
   localStorage.setItem("auto_speak", String(state.autoSpeak));
 }
 
@@ -298,7 +308,7 @@ function renderSettings() {
           <div style="color:${C.muted};font-size:12px;margin-bottom:8px;">Source</div>
           <div style="display:flex;gap:8px;">
             ${provBtn("browser","Device")}
-            ${provBtn("elevenlabs","ElevenLabs")}
+            ${provBtn("openai","OpenAI")}
             ${provBtn("off","Off")}
           </div>
         </div>
@@ -313,15 +323,18 @@ function renderSettings() {
             <input type="checkbox" id="all-voices" ${state.showAllVoices?"checked":""} style="width:16px;height:16px;accent-color:${C.amber};" />
             <span style="color:${C.muted};font-size:12px;">Show all languages (☁️ = cloud/enhanced)</span>
           </label>
-          <div style="font-size:11px;color:${C.dimmed};margin-top:8px;line-height:1.5;">If your downloaded German voice (e.g. Markus Enhanced) isn't listed, Safari isn't exposing it to web apps — a known iOS limit. Tap Refresh after downloading; if it still won't appear, use ElevenLabs for premium German.</div>
+          <div style="font-size:11px;color:${C.dimmed};margin-top:8px;line-height:1.5;">If your downloaded German voice (e.g. Markus Enhanced) isn't listed, Safari isn't exposing it to web apps — a known iOS limit. Tap Refresh after downloading; if it still won't appear, switch the Voice source to OpenAI for natural German.</div>
         </div>
 
-        <div id="eleven-block" class="${vp==="elevenlabs"?"":"hidden"}" style="margin-bottom:16px;">
-          <div style="color:${C.muted};font-size:12px;margin-bottom:6px;">ElevenLabs API Key ${state.elevenKey?`<span style="color:${C.green};">✓</span>`:""}</div>
-          <input id="eleven-key" type="password" value="${esc(state.elevenKey)}" placeholder="ElevenLabs key" style="width:100%;background:${C.card};border:1px solid ${C.border};border-radius:10px;padding:11px 14px;color:${C.text};font-size:14px;font-family:inherit;" />
-          <div style="font-size:11px;color:${C.muted};margin-top:6px;">Key at <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" style="color:${C.amber};">elevenlabs.io</a> · uses multilingual model for German.</div>
-          <div style="margin-top:10px;"><div style="color:${C.muted};font-size:12px;margin-bottom:6px;">Voice ID</div>
-          <input id="eleven-voice" type="text" value="${esc(state.elevenVoiceId)}" placeholder="voice id" style="width:100%;background:${C.card};border:1px solid ${C.border};border-radius:10px;padding:9px 14px;color:${C.text};font-size:13px;font-family:inherit;" /></div>
+        <div id="openai-block" class="${vp==="openai"?"":"hidden"}" style="margin-bottom:16px;">
+          <div style="color:${C.muted};font-size:12px;margin-bottom:6px;">OpenAI API Key ${state.openaiKey?`<span style="color:${C.green};">✓</span>`:""}</div>
+          <input id="openai-key" type="password" value="${esc(state.openaiKey)}" placeholder="sk-..." style="width:100%;background:${C.card};border:1px solid ${C.border};border-radius:10px;padding:11px 14px;color:${C.text};font-size:14px;font-family:inherit;" />
+          <div style="font-size:11px;color:${C.muted};margin-top:6px;">Key at <a href="https://platform.openai.com/api-keys" target="_blank" style="color:${C.amber};">platform.openai.com/api-keys</a> · needs billing enabled (~$0.015 per 1k chars).</div>
+          <div style="margin-top:10px;"><div style="color:${C.muted};font-size:12px;margin-bottom:6px;">Voice</div>
+          <select id="openai-voice">${["alloy","ash","ballad","coral","echo","fable","onyx","nova","sage","shimmer","verse"].map(v=>`<option value="${v}" ${state.openaiVoice===v?"selected":""}>${v}</option>`).join("")}</select></div>
+          <div style="margin-top:10px;"><div style="color:${C.muted};font-size:12px;margin-bottom:6px;">Model</div>
+          <input id="openai-model" type="text" value="${esc(state.openaiModel)}" placeholder="gpt-4o-mini-tts" style="width:100%;background:${C.card};border:1px solid ${C.border};border-radius:10px;padding:9px 14px;color:${C.text};font-size:13px;font-family:inherit;" />
+          <div style="font-size:11px;color:${C.dimmed};margin-top:4px;">gpt-4o-mini-tts (best) or tts-1-hd (stable fallback)</div></div>
           ${state.voiceError?`<div style="margin-top:10px;background:rgba(224,92,92,.12);border:1px solid ${C.red}44;color:${C.red};padding:8px 12px;border-radius:8px;font-size:12px;">⚠️ ${esc(state.voiceError)}</div>`:""}
         </div>
 
@@ -458,16 +471,17 @@ function attachHandlers() {
   const vs=document.getElementById("voice-select"); if(vs)vs.onchange=()=>{state.voiceName=vs.value;persist();};
   const rfv=document.getElementById("refresh-voices"); if(rfv)rfv.onclick=()=>{ if(window.speechSynthesis){window.speechSynthesis.cancel();} loadVoices(); render(); };
   const av=document.getElementById("all-voices"); if(av)av.onchange=()=>{state.showAllVoices=av.checked;render();};
-  const ek=document.getElementById("eleven-key"); if(ek)ek.oninput=()=>{state.elevenKey=ek.value.trim();persist();};
-  const ev=document.getElementById("eleven-voice"); if(ev)ev.oninput=()=>{state.elevenVoiceId=ev.value.trim();persist();};
+  const ek=document.getElementById("openai-key"); if(ek)ek.oninput=()=>{state.openaiKey=ek.value.trim();persist();};
+  const ovc=document.getElementById("openai-voice"); if(ovc)ovc.onchange=()=>{state.openaiVoice=ovc.value;persist();};
+  const omd2=document.getElementById("openai-model"); if(omd2)omd2.oninput=()=>{state.openaiModel=omd2.value.trim();persist();};
   const vr=document.getElementById("voice-rate"); if(vr)vr.oninput=()=>{state.voiceRate=parseFloat(vr.value);persist();const lbl=vr.parentElement.querySelector("span span");if(lbl)lbl.textContent=state.voiceRate.toFixed(2)+"×";};
   const at=document.getElementById("auto-toggle"); if(at)at.onclick=()=>{state.autoSpeak=!state.autoSpeak;persist();render();};
   const tv=document.getElementById("test-voice"); if(tv)tv.onclick=async()=>{
     state.voiceError="";
     const sample="Hallo! Schön, dich kennenzulernen. Lass uns Deutsch üben.";
-    if(state.voiceProvider==="elevenlabs"&&state.elevenKey){
-      tv.textContent="Testing ElevenLabs…";
-      try{ await speakEleven(sample); tv.textContent="🔊 Test voice (ElevenLabs ✓)"; }
+    if(state.voiceProvider==="openai"&&state.openaiKey){
+      tv.textContent="Testing OpenAI…";
+      try{ await speakOpenAI(sample); tv.textContent="🔊 Test voice (OpenAI ✓)"; }
       catch(e){ state.voiceError=e.message; render(); }
     } else {
       speakBrowser(sample);
