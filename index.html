@@ -22,13 +22,15 @@
   @keyframes pulse { 0%,100%{box-shadow:0 0 0 6px rgba(245,166,35,.25),0 0 0 12px rgba(245,166,35,.1)} 50%{box-shadow:0 0 0 10px rgba(245,166,35,.35),0 0 0 20px rgba(245,166,35,.05)} }
   @keyframes typingBounce { 0%,60%,100%{transform:translateY(0);opacity:.4} 30%{transform:translateY(-6px);opacity:1} }
   .hidden { display:none !important; }
+  select { -webkit-appearance:none; appearance:none; background:var(--card); color:var(--text); border:1px solid var(--border); border-radius:10px; padding:11px 14px; font-size:14px; font-family:inherit; width:100%; }
+  input[type=range]{ accent-color: var(--amber); }
 </style>
 </head>
 <body>
 <div id="app"></div>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
-//  Auf Deutsch — Groq cloud edition. Vanilla JS, single file.
+//  Auf Deutsch — Groq chat + flexible voice. Settings on its own page.
 // ═══════════════════════════════════════════════════════════════════════════
 const C = {
   bg:"#0f1117", surface:"#181c27", card:"#1f2435", border:"#2a3050",
@@ -37,25 +39,34 @@ const C = {
 };
 const LEVELS = ["A1","A2","B1","B2","C1"];
 const TOPICS = ["Greetings & Small Talk","Ordering Food","Shopping","Travel & Directions",
-  "Work & Career","Family & Home","Hobbies & Interests","Health & Body","Weather","Sports","Free Conversation"];
+  "Work & Career","Family & Home","Hobbies & Interests","Health & Body","Weather","Free Conversation"];
 
 const state = {
-  screen: "setup",
+  screen: "setup",        // setup | settings | chat | flashcards | review
+  returnTo: "setup",      // where the settings page returns to
   groqKey: localStorage.getItem("groq_key") || "",
   groqModel: localStorage.getItem("groq_model") || "openai/gpt-oss-120b",
+  // voice
+  voiceProvider: localStorage.getItem("voice_provider") || "browser",  // browser | elevenlabs | off
+  voiceName: localStorage.getItem("voice_name") || "",                 // chosen browser voice
+  voiceRate: parseFloat(localStorage.getItem("voice_rate") || "0.9"),
+  elevenKey: localStorage.getItem("eleven_key") || "",
+  elevenVoiceId: localStorage.getItem("eleven_voice_id") || "21m00Tcm4TlvDq8ikWAM",
+  autoSpeak: localStorage.getItem("auto_speak") !== "false",
+  // session
   level: "A2",
   topic: "Greetings & Small Talk",
-  messages: [],
-  loading: false,
-  error: "",
+  messages: [], loading: false, error: "",
   vocab: [],
   missed: JSON.parse(localStorage.getItem("missed_cards") || "[]"),
   flashQueue: [], flashIdx: 0, flashFlipped: false,
   score: { got: 0, missed: 0 },
+  voices: [],
 };
 
+// ── Groq chat ───────────────────────────────────────────────────────────────
 async function callGroq(history, systemPrompt) {
-  if (!state.groqKey) throw new Error("Add your Groq API key in setup.");
+  if (!state.groqKey) throw new Error("Add your Groq API key in Settings.");
   const messages = [
     { role: "system", content: systemPrompt },
     ...history.map(m => ({ role: m.role === "model" ? "assistant" : "user", content: m.content })),
@@ -63,11 +74,7 @@ async function callGroq(history, systemPrompt) {
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${state.groqKey}` },
-    body: JSON.stringify({
-      model: state.groqModel, messages,
-      temperature: 0.8, max_tokens: 1000,
-      response_format: { type: "json_object" },
-    }),
+    body: JSON.stringify({ model: state.groqModel, messages, temperature: 0.8, max_tokens: 1000, response_format: { type: "json_object" } }),
   });
   if (!res.ok) {
     let d = ""; try { const j = await res.json(); d = j.error?.message || JSON.stringify(j); } catch { try { d = await res.text(); } catch {} }
@@ -106,7 +113,7 @@ Rules:
 - A1/A2: simple words, short sentences. B2/C1: complex grammar and idioms welcome.`;
 }
 
-// ── Speech / TTS ────────────────────────────────────────────────────────────
+// ── Speech recognition ──────────────────────────────────────────────────────
 let recognition = null, isListening = false;
 function initSpeech() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -132,20 +139,65 @@ function updateMicButton() {
   const fill = isListening ? "#0f1117" : C.muted;
   btn.querySelectorAll("svg *").forEach(el => { if (el.tagName==="rect") el.setAttribute("fill",fill); else el.setAttribute("stroke",fill); });
 }
-function speak(text) {
+
+// ── Text to speech (browser or ElevenLabs) ──────────────────────────────────
+function loadVoices() {
+  if (!window.speechSynthesis) return;
+  const all = window.speechSynthesis.getVoices();
+  state.voices = all.filter(v => v.lang && v.lang.toLowerCase().startsWith("de"));
+}
+let currentAudio = null;
+async function speak(text) {
+  if (state.voiceProvider === "off") return;
+  const clean = text.replace(/\[.*?\]/g,"").trim();
+  if (!clean) return;
+  if (state.voiceProvider === "elevenlabs" && state.elevenKey) {
+    try { await speakEleven(clean); return; }
+    catch (e) { /* fall through to browser */ }
+  }
+  speakBrowser(clean);
+}
+function speakBrowser(clean) {
   if (!window.speechSynthesis) return;
   window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text.replace(/\[.*?\]/g,"").trim());
-  u.lang = "de-DE"; u.rate = 0.9;
-  const v = window.speechSynthesis.getVoices().find(x => x.lang.startsWith("de"));
+  const u = new SpeechSynthesisUtterance(clean);
+  u.lang = "de-DE";
+  u.rate = state.voiceRate || 0.9;
+  if (!state.voices.length) loadVoices();
+  let v = null;
+  if (state.voiceName) v = state.voices.find(x => x.name === state.voiceName);
+  if (!v) v = state.voices.find(x => x.lang.toLowerCase().startsWith("de"));
   if (v) u.voice = v;
   window.speechSynthesis.speak(u);
+}
+async function speakEleven(clean) {
+  if (currentAudio) { try { currentAudio.pause(); } catch {} currentAudio = null; }
+  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${state.elevenVoiceId}`, {
+    method: "POST",
+    headers: { "xi-api-key": state.elevenKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ text: clean, model_id: "eleven_multilingual_v2", voice_settings: { stability: 0.5, similarity_boost: 0.75 } }),
+  });
+  if (!res.ok) { let d=""; try{d=await res.text();}catch{} throw new Error(`ElevenLabs ${res.status} — ${d.slice(0,150)}`); }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  currentAudio = new Audio(url);
+  currentAudio.playbackRate = state.voiceRate >= 0.5 ? state.voiceRate : 1;
+  await currentAudio.play();
 }
 
 function esc(s){return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
 function collectVocab(){ const all=state.messages.flatMap(m=>m.vocab||[]); state.vocab=[...new Map(all.map(v=>[v.de,v])).values()]; }
 function saveMissed(){ localStorage.setItem("missed_cards", JSON.stringify(state.missed)); }
-function persist(){ localStorage.setItem("groq_key", state.groqKey); localStorage.setItem("groq_model", state.groqModel); }
+function persist(){
+  localStorage.setItem("groq_key", state.groqKey);
+  localStorage.setItem("groq_model", state.groqModel);
+  localStorage.setItem("voice_provider", state.voiceProvider);
+  localStorage.setItem("voice_name", state.voiceName);
+  localStorage.setItem("voice_rate", String(state.voiceRate));
+  localStorage.setItem("eleven_key", state.elevenKey);
+  localStorage.setItem("eleven_voice_id", state.elevenVoiceId);
+  localStorage.setItem("auto_speak", String(state.autoSpeak));
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  RENDER
@@ -153,6 +205,7 @@ function persist(){ localStorage.setItem("groq_key", state.groqKey); localStorag
 function render() {
   const app = document.getElementById("app");
   if (state.screen === "setup") app.innerHTML = renderSetup();
+  else if (state.screen === "settings") app.innerHTML = renderSettings();
   else if (state.screen === "chat") app.innerHTML = renderChat();
   else if (state.screen === "flashcards") app.innerHTML = renderFlashcards();
   else if (state.screen === "review") app.innerHTML = renderReview();
@@ -160,22 +213,22 @@ function render() {
   if (state.screen === "chat") { const b=document.getElementById("messages"); if(b)b.scrollTop=b.scrollHeight; updateMicButton(); }
 }
 
+function gearIcon(color){ return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`; }
+
 function renderSetup() {
+  const ready = !!state.groqKey;
   return `
   <div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:24px;overflow-y:auto;">
-    <div style="max-width:480px;width:100%;padding:28px 0;">
+    <div style="max-width:480px;width:100%;padding:20px 0;">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+        <button id="open-settings" style="display:flex;align-items:center;gap:6px;background:${C.card};border:1px solid ${C.border};border-radius:10px;padding:8px 12px;color:${C.muted};font-size:13px;cursor:pointer;">${gearIcon(C.muted)} Settings</button>
+      </div>
       <div style="text-align:center;margin-bottom:32px;">
         <div class="serif" style="font-size:40px;color:${C.amber};font-weight:700;letter-spacing:-1px;">Auf Deutsch</div>
         <div style="color:${C.muted};font-size:13px;margin-top:6px;letter-spacing:1px;">GERMAN CONVERSATION PRACTICE</div>
       </div>
 
-      <div style="margin-bottom:22px;">
-        <div style="color:${C.muted};font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;">Groq API Key ${state.groqKey?`<span style="color:${C.green};">✓ saved</span>`:""}</div>
-        <input id="groq-key" type="password" value="${esc(state.groqKey)}" placeholder="gsk_..." style="width:100%;background:${C.card};border:1px solid ${C.border};border-radius:10px;padding:11px 14px;color:${C.text};font-size:14px;font-family:inherit;" />
-        <div style="font-size:12px;color:${C.muted};margin-top:6px;line-height:1.5;">Free key at <a href="https://console.groq.com/keys" target="_blank" style="color:${C.amber};">console.groq.com/keys</a> — stored only on this device.</div>
-        <div style="margin-top:10px;"><input id="groq-model" type="text" value="${esc(state.groqModel)}" placeholder="model id" style="width:100%;background:${C.card};border:1px solid ${C.border};border-radius:10px;padding:9px 14px;color:${C.muted};font-size:13px;font-family:inherit;" />
-        <div style="font-size:11px;color:${C.dimmed};margin-top:4px;">model id · default openai/gpt-oss-120b</div></div>
-      </div>
+      ${!ready?`<div style="margin-bottom:20px;background:rgba(245,166,35,.1);border:1px solid ${C.amber}44;color:${C.amber};padding:12px 14px;border-radius:10px;font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:10px;"><span>Add your Groq API key to begin.</span><button id="settings-cta" style="background:${C.amber};border:none;color:#0f1117;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;">Open Settings</button></div>`:""}
 
       ${state.error?`<div style="margin-bottom:18px;background:rgba(224,92,92,.12);border:1px solid ${C.red}44;color:${C.red};padding:10px 12px;border-radius:8px;font-size:13px;">${esc(state.error)}</div>`:""}
 
@@ -199,6 +252,80 @@ function renderSetup() {
   </div>`;
 }
 
+function renderSettings() {
+  loadVoices();
+  const vp = state.voiceProvider;
+  const voiceOpts = state.voices.length
+    ? `<option value="">Auto (best available)</option>` + state.voices.map(v=>`<option value="${esc(v.name)}" ${state.voiceName===v.name?"selected":""}>${esc(v.name)} (${esc(v.lang)})</option>`).join("")
+    : `<option value="">No German voices found — install one in iOS Settings</option>`;
+  const provBtn = (id,label) => `<button data-vprov="${id}" style="flex:1;padding:10px 8px;border-radius:10px;border:2px solid ${vp===id?C.amber:C.border};background:${vp===id?C.amber+"18":C.card};color:${vp===id?C.amber:C.text};font-weight:600;font-size:13px;cursor:pointer;">${label}</button>`;
+  return `
+  <div style="display:flex;flex-direction:column;height:100vh;">
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid ${C.border};background:${C.surface};">
+      <button id="settings-back" style="background:none;border:none;color:${C.muted};cursor:pointer;font-size:20px;">←</button>
+      <div style="font-weight:700;font-size:15px;">Settings</div>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:20px 18px;">
+      <div style="max-width:480px;margin:0 auto;">
+
+        <!-- AI -->
+        <div style="color:${C.amber};font-size:12px;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;font-weight:700;">AI Model</div>
+        <div style="margin-bottom:14px;">
+          <div style="color:${C.muted};font-size:12px;margin-bottom:6px;">Groq API Key ${state.groqKey?`<span style="color:${C.green};">✓ saved</span>`:""}</div>
+          <input id="groq-key" type="password" value="${esc(state.groqKey)}" placeholder="gsk_..." style="width:100%;background:${C.card};border:1px solid ${C.border};border-radius:10px;padding:11px 14px;color:${C.text};font-size:14px;font-family:inherit;" />
+          <div style="font-size:12px;color:${C.muted};margin-top:6px;">Free key at <a href="https://console.groq.com/keys" target="_blank" style="color:${C.amber};">console.groq.com/keys</a></div>
+        </div>
+        <div style="margin-bottom:26px;">
+          <div style="color:${C.muted};font-size:12px;margin-bottom:6px;">Model ID</div>
+          <input id="groq-model" type="text" value="${esc(state.groqModel)}" placeholder="openai/gpt-oss-120b" style="width:100%;background:${C.card};border:1px solid ${C.border};border-radius:10px;padding:10px 14px;color:${C.text};font-size:14px;font-family:inherit;" />
+          <div style="font-size:11px;color:${C.dimmed};margin-top:4px;">default: openai/gpt-oss-120b</div>
+        </div>
+
+        <!-- Voice -->
+        <div style="color:${C.amber};font-size:12px;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;font-weight:700;">Voice</div>
+        <div style="margin-bottom:14px;">
+          <div style="color:${C.muted};font-size:12px;margin-bottom:8px;">Source</div>
+          <div style="display:flex;gap:8px;">
+            ${provBtn("browser","Device")}
+            ${provBtn("elevenlabs","ElevenLabs")}
+            ${provBtn("off","Off")}
+          </div>
+        </div>
+
+        <div id="browser-voice-block" class="${vp==="browser"?"":"hidden"}" style="margin-bottom:16px;">
+          <div style="color:${C.muted};font-size:12px;margin-bottom:6px;">German Voice</div>
+          <select id="voice-select">${voiceOpts}</select>
+          <div style="font-size:11px;color:${C.dimmed};margin-top:6px;line-height:1.5;">For the most natural voice on iPhone: Settings → Accessibility → Spoken Content → Voices → German → download <b>Anna (Premium)</b>, then pick it here.</div>
+        </div>
+
+        <div id="eleven-block" class="${vp==="elevenlabs"?"":"hidden"}" style="margin-bottom:16px;">
+          <div style="color:${C.muted};font-size:12px;margin-bottom:6px;">ElevenLabs API Key ${state.elevenKey?`<span style="color:${C.green};">✓</span>`:""}</div>
+          <input id="eleven-key" type="password" value="${esc(state.elevenKey)}" placeholder="ElevenLabs key" style="width:100%;background:${C.card};border:1px solid ${C.border};border-radius:10px;padding:11px 14px;color:${C.text};font-size:14px;font-family:inherit;" />
+          <div style="font-size:11px;color:${C.muted};margin-top:6px;">Key at <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" style="color:${C.amber};">elevenlabs.io</a> · uses multilingual model for German.</div>
+          <div style="margin-top:10px;"><div style="color:${C.muted};font-size:12px;margin-bottom:6px;">Voice ID</div>
+          <input id="eleven-voice" type="text" value="${esc(state.elevenVoiceId)}" placeholder="voice id" style="width:100%;background:${C.card};border:1px solid ${C.border};border-radius:10px;padding:9px 14px;color:${C.text};font-size:13px;font-family:inherit;" /></div>
+        </div>
+
+        <div class="${vp==="off"?"hidden":""}" style="margin-bottom:16px;">
+          <div style="color:${C.muted};font-size:12px;margin-bottom:6px;display:flex;justify-content:space-between;"><span>Speech speed</span><span style="color:${C.amber};">${state.voiceRate.toFixed(2)}×</span></div>
+          <input id="voice-rate" type="range" min="0.5" max="1.2" step="0.05" value="${state.voiceRate}" style="width:100%;" />
+          <div style="font-size:11px;color:${C.dimmed};margin-top:4px;">Slower is easier to mimic. ~0.8× is a good learning pace.</div>
+        </div>
+
+        <div class="${vp==="off"?"hidden":""}" style="margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;">
+          <span style="color:${C.muted};font-size:13px;">Auto-play AI replies</span>
+          <button id="auto-toggle" style="width:46px;height:26px;border-radius:14px;border:none;cursor:pointer;background:${state.autoSpeak?C.amber:C.dimmed};position:relative;transition:all .2s;">
+            <span style="position:absolute;top:3px;left:${state.autoSpeak?"23px":"3px"};width:20px;height:20px;border-radius:50%;background:#fff;transition:all .2s;"></span>
+          </button>
+        </div>
+
+        <button id="test-voice" class="${vp==="off"?"hidden":""}" style="width:100%;padding:11px 0;border-radius:10px;border:1px solid ${C.border};background:${C.card};color:${C.text};font-size:14px;cursor:pointer;margin-bottom:8px;">🔊 Test voice</button>
+
+      </div>
+    </div>
+  </div>`;
+}
+
 function renderChat() {
   const msgs = state.messages.map(renderBubble).join("");
   return `
@@ -211,9 +338,10 @@ function renderChat() {
           <div style="font-size:11px;color:${C.muted};">${state.level} · ${esc(state.topic)}</div>
         </div>
       </div>
-      <div style="display:flex;gap:8px;">
+      <div style="display:flex;gap:8px;align-items:center;">
         ${state.vocab.length?`<button id="open-cards" style="background:${C.card};border:1px solid ${C.border};color:${C.amber};border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-weight:600;">📚 ${state.vocab.length}</button>`:""}
         ${state.missed.length?`<button id="open-missed" style="background:${C.card};border:1px solid ${C.red}44;color:${C.red};border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-weight:600;">🔁 ${state.missed.length}</button>`:""}
+        <button id="chat-settings" style="background:none;border:none;cursor:pointer;padding:4px;">${gearIcon(C.muted)}</button>
       </div>
     </div>
     ${state.error?`<div style="background:rgba(224,92,92,.12);border:1px solid ${C.red}44;color:${C.red};padding:10px 16px;font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:12px;"><span style="flex:1;">${esc(state.error)}</span><button id="retry-btn" style="background:${C.red};border:none;color:#fff;border-radius:8px;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:600;flex-shrink:0;">Retry</button></div>`:""}
@@ -258,7 +386,7 @@ function renderFlashcards(){
       <div id="flip-card" style="width:300px;min-height:180px;background:${f?C.amber:C.card};border:2px solid ${f?C.amber:C.border};border-radius:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:32px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.4);transition:all .25s;">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:${f?"#0f1117":C.muted};margin-bottom:12px;">${f?"English":"German"}</div>
         <div class="serif" style="font-size:22px;color:${f?"#0f1117":C.text};font-weight:600;">${esc(f?card.en:card.de)}</div>
-        ${!f?`<div style="color:${C.muted};font-size:12px;margin-top:12px;">tap to reveal</div>`:""}
+        ${!f?`<div style="color:${C.muted};font-size:12px;margin-top:12px;">tap to reveal</div>`:`<button class="card-speak" data-text="${esc(card.de)}" style="margin-top:14px;background:none;border:1px solid #0f1117;color:#0f1117;border-radius:8px;padding:4px 12px;font-size:12px;cursor:pointer;">🔊 hear German</button>`}
       </div>
       ${f?`<div style="display:flex;gap:12px;"><button class="flash-result" data-result="got" style="background:none;border:2px solid ${C.green};color:${C.green};border-radius:12px;padding:10px 28px;font-size:14px;font-weight:600;cursor:pointer;">✓ Got it</button><button class="flash-result" data-result="missed" style="background:none;border:2px solid ${C.red};color:${C.red};border-radius:12px;padding:10px 28px;font-size:14px;font-weight:600;cursor:pointer;">✗ Missed</button></div>`:""}
       <button id="flash-skip" style="background:none;border:none;color:${C.muted};font-size:13px;cursor:pointer;text-decoration:underline;">skip</button>
@@ -296,12 +424,28 @@ function shell(title, inner){
 
 // ── Handlers ────────────────────────────────────────────────────────────────
 function attachHandlers() {
+  // setup
   document.querySelectorAll("[data-level]").forEach(b=>b.onclick=()=>{state.level=b.dataset.level;render();});
   document.querySelectorAll("[data-topic]").forEach(b=>b.onclick=()=>{state.topic=b.dataset.topic;render();});
+  const os=document.getElementById("open-settings"); if(os)os.onclick=()=>{state.returnTo="setup";state.screen="settings";render();};
+  const sc=document.getElementById("settings-cta"); if(sc)sc.onclick=()=>{state.returnTo="setup";state.screen="settings";render();};
+  const start=document.getElementById("start-btn"); if(start)start.onclick=startConversation;
+
+  // settings
+  const sb=document.getElementById("settings-back"); if(sb)sb.onclick=()=>{persist();state.screen=state.returnTo;render();};
   const gk=document.getElementById("groq-key"); if(gk)gk.oninput=()=>{state.groqKey=gk.value.trim();persist();};
   const gm=document.getElementById("groq-model"); if(gm)gm.oninput=()=>{state.groqModel=gm.value.trim();persist();};
-  const start=document.getElementById("start-btn"); if(start)start.onclick=startConversation;
+  document.querySelectorAll("[data-vprov]").forEach(b=>b.onclick=()=>{state.voiceProvider=b.dataset.vprov;persist();render();});
+  const vs=document.getElementById("voice-select"); if(vs)vs.onchange=()=>{state.voiceName=vs.value;persist();};
+  const ek=document.getElementById("eleven-key"); if(ek)ek.oninput=()=>{state.elevenKey=ek.value.trim();persist();};
+  const ev=document.getElementById("eleven-voice"); if(ev)ev.oninput=()=>{state.elevenVoiceId=ev.value.trim();persist();};
+  const vr=document.getElementById("voice-rate"); if(vr)vr.oninput=()=>{state.voiceRate=parseFloat(vr.value);persist();const lbl=vr.parentElement.querySelector("span span");if(lbl)lbl.textContent=state.voiceRate.toFixed(2)+"×";};
+  const at=document.getElementById("auto-toggle"); if(at)at.onclick=()=>{state.autoSpeak=!state.autoSpeak;persist();render();};
+  const tv=document.getElementById("test-voice"); if(tv)tv.onclick=()=>speak("Hallo! Schön, dich kennenzulernen. Lass uns Deutsch üben.");
+
+  // chat
   const back=document.getElementById("back-setup"); if(back)back.onclick=()=>{state.screen="setup";state.messages=[];state.error="";render();};
+  const csg=document.getElementById("chat-settings"); if(csg)csg.onclick=()=>{state.returnTo="chat";state.screen="settings";render();};
   const send=document.getElementById("send-btn"); if(send)send.onclick=()=>sendMessage(false);
   const mic=document.getElementById("mic-btn"); if(mic)mic.onclick=toggleMic;
   const ta=document.getElementById("chat-input"); if(ta)ta.onkeydown=(e)=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage(false);}};
@@ -310,23 +454,27 @@ function attachHandlers() {
   const omd=document.getElementById("open-missed"); if(omd)omd.onclick=()=>startFlashcards(state.missed);
   document.querySelectorAll(".trans-toggle").forEach(b=>b.onclick=()=>{const t=document.getElementById(b.dataset.target);if(t){t.classList.toggle("hidden");b.textContent=t.classList.contains("hidden")?"show translation":"hide translation";}});
   document.querySelectorAll(".speak-btn").forEach(b=>b.onclick=()=>speak(b.dataset.text));
-  const flip=document.getElementById("flip-card"); if(flip)flip.onclick=()=>{state.flashFlipped=!state.flashFlipped;render();};
+
+  // flashcards
+  const flip=document.getElementById("flip-card"); if(flip)flip.onclick=(e)=>{ if(e.target.closest(".card-speak"))return; state.flashFlipped=!state.flashFlipped;render();};
+  document.querySelectorAll(".card-speak").forEach(b=>b.onclick=(e)=>{e.stopPropagation();speak(b.dataset.text);});
   document.querySelectorAll(".flash-result").forEach(b=>b.onclick=()=>handleFlashResult(b.dataset.result));
   const skip=document.getElementById("flash-skip"); if(skip)skip.onclick=()=>advanceFlash();
-  const sb=document.getElementById("shell-back"); if(sb)sb.onclick=()=>{state.screen="chat";render();};
+  const shb=document.getElementById("shell-back"); if(shb)shb.onclick=()=>{state.screen="chat";render();};
   const rm=document.getElementById("retry-missed"); if(rm)rm.onclick=()=>startFlashcards(state.missed);
   const bc=document.getElementById("back-chat"); if(bc)bc.onclick=()=>{state.screen="chat";render();};
   const nc=document.getElementById("new-conv"); if(nc)nc.onclick=()=>{state.screen="setup";state.messages=[];render();};
 }
 
 async function startConversation() {
-  if (!state.groqKey) { state.error="Add your Groq API key first."; render(); return; }
+  if (!state.groqKey) { state.returnTo="setup"; state.screen="settings"; render(); return; }
   state.error=""; state.messages=[]; state.screen="chat"; state.loading=true; render();
   try {
     const raw = await callGroq([{ role:"user", content:"Start the conversation with a natural German greeting or opening question for this topic." }], buildSystemPrompt(state.level, state.topic));
     const p = parseResponse(raw);
     state.messages.push({ role:"model", content:p.reply||raw, translation:p.translation||"", corrections:[], tip:p.tip||"", vocab:p.vocab||[] });
     collectVocab();
+    if (state.autoSpeak && p.reply) speak(p.reply);
   } catch(e){ state.error=e.message; }
   state.loading=false; render();
 }
@@ -346,7 +494,7 @@ async function sendMessage(isRetry) {
     const p=parseResponse(raw);
     state.messages.push({role:"model",content:p.reply||raw,translation:p.translation||"",corrections:p.corrections||[],tip:p.tip||"",vocab:p.vocab||[]});
     collectVocab();
-    if (p.reply) speak(p.reply);
+    if (state.autoSpeak && p.reply) speak(p.reply);
   } catch(e){ state.error=e.message; }
   state.loading=false; render();
 }
@@ -356,7 +504,7 @@ function handleFlashResult(result){ const card=state.flashQueue[state.flashIdx];
 function advanceFlash(){ state.flashFlipped=false; if(state.flashIdx+1>=state.flashQueue.length)state.screen="review"; else state.flashIdx++; render(); }
 
 initSpeech();
-if (window.speechSynthesis) window.speechSynthesis.getVoices();
+if (window.speechSynthesis) { loadVoices(); window.speechSynthesis.onvoiceschanged = loadVoices; }
 render();
 </script>
 </body>
