@@ -155,6 +155,13 @@ textarea { resize: vertical; min-height: 60px; }
 .tag.src-CBG { color: #6b4ea8; border-color: #d8cdef; background: #f3effb; }
 .tag.src-Duolingo { color: #3f7d2f; border-color: #cfe6c4; background: #eef7ea; }
 .tag.src-PaulNoble { color: #2f6a7d; border-color: #c4dee6; background: #eaf4f7; }
+.tag.status-mastered { color: var(--green); border-color: #bfe0cd; background: #eef7ea; }
+.tag.status-learning { color: var(--gold-deep); border-color: var(--gold-soft); background: #fbf3e2; }
+.tag.status-new { color: var(--ink-soft); }
+
+/* ---- stats: by-unit vocab breakdown ---- */
+.vocab-status-row { padding: 7px 0; font-size: .88rem; border-bottom: 1px solid var(--surface-2); }
+.vocab-status-row:last-child { border-bottom: 0; }
 
 /* progress meter */
 .meter { height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; border: 1px solid var(--line); }

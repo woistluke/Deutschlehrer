@@ -137,7 +137,7 @@ export const allProgress = (userId) => selectWhere('progress', { user_id: userId
 
 // ---- sessions -------------------------------------------------------------
 export const createSession = (userId, fields) =>
-  insert('sessions', { user_id: userId, mode: fields.mode || 'curriculum', unit_id: fields.unit_id || null, outcome: 'in_progress' });
+  insert('sessions', { user_id: userId, mode: fields.mode || 'curriculum', unit_id: fields.unit_id || null, outcome: 'in_progress', started_at: new Date().toISOString() });
 export const updateSession = (id, patch) => update('sessions', 'session_id', id, patch);
 export const recentSessions = async (userId, n = 10) => {
   const rows = await selectWhere('sessions', { user_id: userId });
