@@ -154,12 +154,18 @@ Every question is fully independent: its "answer" must be the direct, faithful
 solution to that SAME question's "prompt" only — never borrow wording or content
 from a different question in this batch.
 
-For any "fill_blank" question specifically: write "prompt" as one complete German
-sentence built around exactly ONE pool item, with the single missing word or short
-phrase replaced by a blank shown as exactly "____" (four underscores) — the rest of
-the sentence stays fully written out. The "answer" field for that question must
-contain ONLY the missing word/phrase that fills the blank — never the full sentence,
-and never content tied to a different pool item.
+For any "fill_blank" question specifically: pick exactly ONE pool item — the blank
+MUST BE that pool item's own German word/phrase itself, not some other word in the
+sentence. Write "prompt" as one complete German sentence containing that pool item,
+with THAT pool item (and only that pool item) replaced by a blank shown as exactly
+"____" (four underscores) — the rest of the sentence stays fully written out. Never
+blank a proper noun, number, or other incidental word that isn't the pool item being
+tested — the learner must be filling in the vocabulary they're studying, not guessing
+an arbitrary detail (e.g. for the pool item "kommen aus — to come from", a sentence
+like "Ich ____ aus Berlin" is correct; "Ich komme aus ____" is wrong because it blanks
+the city, not the vocabulary item). The "answer" field for that question must contain
+ONLY the missing word/phrase that fills the blank — never the full sentence, and never
+content tied to a different pool item.
 
 ITEM POOL:
 ${pool.map((p) => `- ${p}`).join('\n')}
