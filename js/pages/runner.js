@@ -432,13 +432,28 @@ function typeLabel(t) {
   return ({ en_to_de: 'English → German', de_to_en: 'German → English', respond_de: 'Answer in German', fill_blank: 'Fill in the blank' })[t] || t || '';
 }
 
+// item_label is free text from the AI grader, not a stable id — resolve it to
+// a vocab row by matching its German/English text against the label. Picks
+// the LONGEST matching text rather than the first hit found, so a short item
+// that happens to be a prefix of a longer one (e.g. "Ich bin" / "Ich bin
+// Student") doesn't steal every answer meant for the longer, more specific
+// phrase.
+function resolveVocabByLabel(label, vocabById) {
+  let best = null, bestLen = 0;
+  for (const v of Object.values(vocabById)) {
+    const de = (v.german || '').toLowerCase();
+    const en = (v.english || '').toLowerCase();
+    const len = Math.max(de && label.includes(de) ? de.length : 0, en && label.includes(en) ? en.length : 0);
+    if (len > bestLen) { bestLen = len; best = v; }
+  }
+  return best;
+}
+
 // Map a graded answer back onto a progress record + SRS update.
 async function recordResult(q, verdict) {
   const label = (q.item_label || '').toLowerCase();
   if (!label) return; // respond-in-German / grammar-only — nothing to map
-  const vocab = Object.values(sessionCtx.vocabById).find(
-    (v) => label.includes((v.german || '').toLowerCase()) || label.includes((v.english || '').toLowerCase())
-  );
+  const vocab = resolveVocabByLabel(label, sessionCtx.vocabById);
   if (!vocab) return;
   const itemId = vocab.vocab_id;
   const existing = (await store.getProgress(CTX.userId, itemId)) || {};
