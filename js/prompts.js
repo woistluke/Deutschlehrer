@@ -162,10 +162,19 @@ with THAT pool item (and only that pool item) replaced by a blank shown as exact
 blank a proper noun, number, or other incidental word that isn't the pool item being
 tested — the learner must be filling in the vocabulary they're studying, not guessing
 an arbitrary detail (e.g. for the pool item "kommen aus — to come from", a sentence
-like "Ich ____ aus Berlin" is correct; "Ich komme aus ____" is wrong because it blanks
-the city, not the vocabulary item). The "answer" field for that question must contain
-ONLY the missing word/phrase that fills the blank — never the full sentence, and never
-content tied to a different pool item.
+like "Ich ____ Berlin" is correct; "Ich komme aus ____" is wrong because it blanks
+the city, not the vocabulary item).
+
+The blank and the "answer" field must match EXACTLY, word for word: "answer" is the
+literal text removed from "prompt" to create the blank — nothing more, nothing less.
+If the pool item is a multi-word phrase (e.g. "kommen aus"), EVERY word of that phrase
+must sit inside the single blank, contiguously — never leave part of the phrase spelled
+out in the sentence while the rest goes into "answer" (wrong: prompt "Ich ____ aus
+Berlin" with answer "komme aus" — "aus" is visible in the prompt AND in the answer,
+so the learner can't tell the blank needs it too; right: prompt "Ich ____ Berlin" with
+answer "komme aus"). Before finalizing each fill_blank question, check that replacing
+"____" in "prompt" with "answer" reproduces the exact original sentence with no leftover
+or duplicated words.
 
 ITEM POOL:
 ${pool.map((p) => `- ${p}`).join('\n')}
