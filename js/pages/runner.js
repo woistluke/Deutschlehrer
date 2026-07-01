@@ -9,6 +9,7 @@ import { buildUnitConvoPrompt, buildSentencePrompt, buildQuizPrompt } from '../p
 import { quizCall } from '../ai.js';
 import { createRichChat, escapeHtml } from '../chatui.js';
 import { applyAnswer, unitMeetsThreshold } from '../srs.js';
+import { UNIT_COMPLETION_RATIO } from '../config.js';
 
 const PHASES = [
   { key: 'vocab', label: 'Vocabulary' },
@@ -24,9 +25,13 @@ const PHASES = [
 // every time from live progress data (never-introduced words first, then the
 // unit's weakest-mastery words), so repeated lessons sweep across the whole
 // unit and re-surface anything shaky instead of drilling the same 5 words
-// over and over. The unit only unlocks the next one once EVERY word in the
-// unit — not just the words from the most recent session — clears the
-// mastery threshold.
+// over and over. The unit unlocks the next one once UNIT_COMPLETION_RATIO of
+// the words in the unit — not just the words from the most recent session —
+// clear the mastery threshold; the remaining stragglers don't block
+// progress, they instead get folded into later units' sentence/quiz pools
+// as priority review (see getUnmasteredFromPriorUnits in store.js) so they
+// can still reach mastery, and that unit can still be marked complete,
+// without a dedicated re-run.
 const SESSION_SIZE = 5;
 
 let CTX, ROOT;
@@ -99,7 +104,7 @@ async function renderLanding() {
     <div class="page-head">
       <div class="eyebrow">Today</div>
       <h1>Curriculum runner</h1>
-      <p>Each lesson moves through four phases: match the vocabulary, drill single sentences, hold a conversation, then take the quiz — pulling a ~${SESSION_SIZE}-word slice of the unit each time so a lesson stays under 5 minutes. A unit unlocks the next one once every one of its words is mastered.</p>
+      <p>Each lesson moves through four phases: match the vocabulary, drill single sentences, hold a conversation, then take the quiz — pulling a ~${SESSION_SIZE}-word slice of the unit each time so a lesson stays under 5 minutes. A unit unlocks the next one once ${Math.round(UNIT_COMPLETION_RATIO * 100)}% of its words are mastered — any stragglers keep getting prioritized into later units' sentence and quiz phases until they clear too, so old units can finish without a dedicated re-run.</p>
     </div>
 
     ${active ? `
@@ -146,14 +151,22 @@ function buildVocabMap(sections) {
   return map;
 }
 
+function buildUnitsMap(sections) {
+  const map = {};
+  sections.forEach((s) => s.units.forEach((u) => { map[u.unit_id] = u; }));
+  return map;
+}
+
 async function buildContext(unit, section, mode) {
   const sections = await store.getCurriculum(CTX.userId);
   const vocabById = buildVocabMap(sections);
-  const [reviewItems, weakPoints] = await Promise.all([
+  const unitsById = buildUnitsMap(sections);
+  const [reviewItems, weakPoints, priorWeak] = await Promise.all([
     store.getDueReviewItems(CTX.userId),
     store.getWeakPoints(CTX.userId),
+    mode === 'curriculum' ? store.getUnmasteredFromPriorUnits(CTX.userId, unit.unit_id) : Promise.resolve([]),
   ]);
-  return { unit, section, sectionTitle: section?.title, reviewItems, weakPoints, vocabById, mode };
+  return { unit, section, sectionTitle: section?.title, reviewItems, weakPoints, priorWeak, vocabById, unitsById, mode };
 }
 
 async function startSession(unit, section, mode) {
@@ -176,8 +189,9 @@ async function startDueReview(sections) {
   const due = await store.getDueReviewItems(CTX.userId, 12);
   if (!due.length) { alert('Nothing due right now — nicely done.'); return; }
   const vocabById = buildVocabMap(sections);
+  const unitsById = buildUnitsMap(sections);
   const pseudoUnit = { title: 'Due review', objectives: ['refresh items due for review'], grammar_focus: [], vocab: due.map((p) => vocabById[p.item_id]).filter(Boolean) };
-  sessionCtx = { unit: pseudoUnit, section: null, sectionTitle: 'Review', reviewItems: due, weakPoints: [], vocabById, mode: 'review' };
+  sessionCtx = { unit: pseudoUnit, section: null, sectionTitle: 'Review', reviewItems: due, weakPoints: [], priorWeak: [], vocabById, unitsById, mode: 'review' };
   session = await store.createSession(CTX.userId, { mode: 'review', unit_id: null });
   phaseIdx = 0;
   renderSession();
@@ -463,6 +477,19 @@ async function recordResult(q, verdict) {
   await store.upsertProgress(CTX.userId, itemId, {
     item_type: 'vocab', unit_id: vocab.unit_id, known_errors: [...known], ...upd,
   });
+
+  // This answer can belong to an earlier unit pulled in as priority review
+  // (or a unit being reviewed directly) rather than the unit driving this
+  // session. Re-check THAT unit's own completion too, so it can cross the
+  // finish line passively as its stragglers get mopped up here, instead of
+  // needing a dedicated re-run once it's already this close.
+  if (vocab.unit_id !== sessionCtx.fullUnit?.unit_id) {
+    const owningUnit = sessionCtx.unitsById?.[vocab.unit_id];
+    if (owningUnit && owningUnit.status !== 'complete' && owningUnit.status !== 'locked') {
+      const promoted = await maybePromote(owningUnit);
+      if (promoted) (sessionCtx.promotedPriorUnits ||= []).push(owningUnit.title);
+    }
+  }
 }
 
 async function finishQuiz() {
@@ -478,24 +505,28 @@ async function finishQuiz() {
 
   const message = unitComplete
     ? `<p class="verdict correct">Unit mastered — the next unit is unlocked.</p>`
-    : `<p class="muted">Keep at it — items you missed will resurface in review, and future lessons in this unit will keep mixing in whatever still needs work until the whole unit is mastered.</p>`;
+    : `<p class="muted">Keep at it — items you missed will resurface in review, and future lessons in this unit will keep mixing in whatever still needs work until the unit clears ${Math.round(UNIT_COMPLETION_RATIO * 100)}% mastery.</p>`;
+  const priorNote = sessionCtx.promotedPriorUnits?.length
+    ? `<p class="verdict correct" style="margin-top:6px">Also just crossed the finish line: ${sessionCtx.promotedPriorUnits.map(esc).join(', ')} 🎉</p>`
+    : '';
 
   zone.innerHTML = `
     <div class="card">
       <div class="eyebrow">Lesson complete</div>
       <h2>${right} / ${total} correct</h2>
       ${message}
+      ${priorNote}
       <button class="btn primary" id="back" style="margin-top:10px">Back to runner</button>
     </div>
   `;
   zone.querySelector('#back').onclick = endSession;
 }
 
-// The unit as a whole is mastered — and the next unit unlocks — only once
-// EVERY vocab item in the unit individually clears the mastery threshold,
-// not just the ~5 words drilled in the session that just finished. An item
-// with no progress row yet (never drilled) counts as unmastered, so a unit
-// can't complete just because the words that happened to get seen were easy.
+// The unit as a whole is mastered — and the next unit unlocks — once
+// UNIT_COMPLETION_RATIO of its vocab items individually clear the mastery
+// threshold (not necessarily every one — see config.js). An item with no
+// progress row yet (never drilled) counts as unmastered, so a unit can't
+// complete just because the words that happened to get seen were easy.
 async function maybePromote(unit) {
   const vocab = (unit.vocab || []).filter((v) => v.german && v.english);
   if (!vocab.length) return false;
@@ -503,7 +534,7 @@ async function maybePromote(unit) {
   (await store.allProgress(CTX.userId)).forEach((p) => { progByItem[p.item_id] = p; });
   const threshold = unit.mastery_threshold ?? 0.8;
   const records = vocab.map((v) => progByItem[v.vocab_id] || { mastery_score: 0 });
-  if (!unitMeetsThreshold(records, threshold)) return false;
+  if (!unitMeetsThreshold(records, threshold, UNIT_COMPLETION_RATIO)) return false;
 
   await store.updateUnit(unit.unit_id, { status: 'complete' });
   const sections = await store.getCurriculum(CTX.userId);

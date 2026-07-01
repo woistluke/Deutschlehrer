@@ -41,11 +41,14 @@ export function isDue(record, now = new Date()) {
   return new Date(record.next_due).getTime() <= now.getTime();
 }
 
-// A unit counts as complete when every tracked item meets the unit threshold.
-// Caller passes the unit's threshold and the progress records for its items.
-export function unitMeetsThreshold(progressRecords, threshold) {
+// A unit counts as complete once at least `completionRatio` of its tracked
+// items meet the unit threshold — defaults to every item, but callers can
+// pass a lower ratio (e.g. UNIT_COMPLETION_RATIO) so a unit doesn't stay
+// gated on its last straggler word or two.
+export function unitMeetsThreshold(progressRecords, threshold, completionRatio = 1) {
   if (progressRecords.length === 0) return false;
-  return progressRecords.every((p) => (p.mastery_score || 0) >= threshold);
+  const met = progressRecords.filter((p) => (p.mastery_score || 0) >= threshold).length;
+  return met / progressRecords.length >= completionRatio;
 }
 
 function round2(n) {

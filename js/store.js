@@ -317,3 +317,31 @@ export async function getWeakPoints(userId, limit = 5) {
     .sort((a, b) => (a.mastery_score || 0) - (b.mastery_score || 0))
     .slice(0, limit);
 }
+
+// Vocab items from already-unlocked units that come BEFORE the given unit in
+// curriculum order, whose mastery hasn't cleared their own unit's threshold
+// (never-introduced counts as unmastered too). Ordered oldest-unit-first, then
+// weakest-mastery-first within a unit — this is the pool that lets earlier
+// units keep closing the gap to complete during LATER units' regular lessons,
+// instead of needing a dedicated re-run to mop up the last stragglers.
+export async function getUnmasteredFromPriorUnits(userId, activeUnitId, limit = 8) {
+  const [progress, sections] = await Promise.all([allProgress(userId), getCurriculum(userId)]);
+  const progByItem = {};
+  progress.forEach((p) => { progByItem[p.item_id] = p; });
+
+  const flat = sections.flatMap((s) => s.units);
+  const activeIdx = flat.findIndex((u) => u.unit_id === activeUnitId);
+  const priorUnits = (activeIdx === -1 ? flat : flat.slice(0, activeIdx)).filter((u) => u.status !== 'locked');
+
+  const weak = [];
+  priorUnits.forEach((u, unitPos) => {
+    const threshold = u.mastery_threshold ?? 0.8;
+    (u.vocab || []).forEach((v) => {
+      if (!v.german || !v.english) return;
+      const mastery = progByItem[v.vocab_id]?.mastery_score || 0;
+      if (mastery < threshold) weak.push({ v, unitPos, mastery });
+    });
+  });
+  weak.sort((a, b) => a.unitPos - b.unitPos || a.mastery - b.mastery);
+  return weak.slice(0, limit).map((w) => w.v);
+}

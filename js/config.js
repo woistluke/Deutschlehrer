@@ -25,6 +25,13 @@ export const DEFAULTS = {
 // level; a miss drops two levels (min 0). next_due = last_seen + ladder[level].
 export const SRS_LADDER_DAYS = [0, 1, 3, 7, 14, 30, 90];
 
+// Fraction of a unit's vocabulary that must clear mastery before the next
+// unit unlocks. Less than 1 so the last word or two doesn't gate progress —
+// stragglers keep getting prioritized into later units' sessions instead
+// (see getUnmasteredFromPriorUnits in store.js) and can push the unit over
+// the line passively once they cross the threshold.
+export const UNIT_COMPLETION_RATIO = 0.9;
+
 // How many review items to surface per session, and how strongly to favor
 // recent units. Recency weight multiplies an item's selection priority by
 // 1 / (1 + units_since_completed).
