@@ -1,0 +1,133 @@
+// pages/settings.js — standalone settings. Holds the userID field, Supabase
+// credentials, provider API keys, and model configuration.
+import { DEFAULTS, LS } from '../config.js';
+import * as store from '../store.js';
+
+export function mountSettings(el, ctx) {
+  const s = ctx.settings;
+  el.innerHTML = `
+    <div class="page-head">
+      <div class="eyebrow">Settings</div>
+      <h1>Settings</h1>
+      <p>Your handle separates your progress from other testers. Keys stay in this browser only — they are never sent anywhere except directly to Groq and OpenAI.</p>
+    </div>
+
+    <div class="card">
+      <h2>Who's learning</h2>
+      <label class="field"><span>Your handle <small>— e.g. luke. Switching handles switches whose curriculum you see.</small></span>
+        <input id="set-user" value="${esc(ctx.userId)}" placeholder="luke" /></label>
+      <button class="btn primary" id="set-user-save">Switch to this handle</button>
+    </div>
+
+    <div class="card">
+      <h2>Data storage</h2>
+      <p class="muted" style="margin-top:0">${ctx.remote
+        ? 'Connected to Supabase. Progress syncs across devices.'
+        : 'No Supabase keys yet — using this browser\'s local storage. Add keys below to sync across devices.'}</p>
+      <label class="field"><span>Supabase project URL</span>
+        <input id="set-suburl" value="${esc(s.supabaseUrl)}" placeholder="https://xxxx.supabase.co" /></label>
+      <label class="field"><span>Supabase anon key</span>
+        <input id="set-subkey" value="${esc(s.supabaseAnonKey)}" placeholder="eyJ..." /></label>
+    </div>
+
+    <div class="card">
+      <h2>API keys</h2>
+      <label class="field"><span>Groq API key <small>— conversation + quiz</small></span>
+        <input id="set-groq" type="password" value="${esc(s.groqKey)}" placeholder="gsk_..." /></label>
+      <label class="field"><span>OpenAI API key <small>— speech + transcription</small></span>
+        <input id="set-openai" type="password" value="${esc(s.openaiKey)}" placeholder="sk-..." /></label>
+    </div>
+
+    <div class="card">
+      <h2>Models</h2>
+      <div class="grid2">
+        <label class="field"><span>Tutor model <small>(Groq)</small></span>
+          <input id="set-tutormodel" value="${esc(s.tutorModel || DEFAULTS.tutorModel)}" /></label>
+        <label class="field"><span>Tutor temperature</span>
+          <input id="set-tutortemp" type="number" step="0.1" min="0" max="2" value="${s.tutorTemperature ?? DEFAULTS.tutorTemperature}" /></label>
+        <label class="field"><span>Quiz model <small>(separate, stricter)</small></span>
+          <input id="set-quizmodel" value="${esc(s.quizModel || DEFAULTS.quizModel)}" /></label>
+        <label class="field"><span>Quiz temperature</span>
+          <input id="set-quiztemp" type="number" step="0.1" min="0" max="2" value="${s.quizTemperature ?? DEFAULTS.quizTemperature}" /></label>
+        <label class="field"><span>TTS voice</span>
+          <input id="set-voice" value="${esc(s.ttsVoice || DEFAULTS.ttsVoice)}" /></label>
+        <label class="field"><span>TTS model</span>
+          <input id="set-ttsmodel" value="${esc(s.ttsModel || DEFAULTS.ttsModel)}" /></label>
+      </div>
+      <p class="muted" style="font-size:.82rem">Verify current model strings at console.groq.com — provider model names change over time.</p>
+    </div>
+
+    <button class="btn primary" id="set-save">Save settings</button>
+    <span id="set-status" class="muted" style="margin-left:12px"></span>
+
+    <div class="card">
+      <h2>Admin — curriculum sync</h2>
+      <p class="muted" style="margin-top:0">Pushes any sections/units/vocab from the current seed curriculum (<code>seed.js</code>) into existing accounts. Additive only by default — it never deletes anything and never touches a unit's progress (status, mastery). Re-run this any time the seed curriculum changes.</p>
+      <label class="row" style="gap:8px;align-items:center;font-weight:normal">
+        <input type="checkbox" id="set-sync-refresh" />
+        <span>Also refresh objectives / grammar focus / source on units that already exist</span>
+      </label>
+      <div class="row wrap" style="gap:8px;margin-top:10px">
+        <button class="btn primary" id="set-sync-user">Sync this handle (${esc(ctx.userId)})</button>
+        <button class="btn danger" id="set-sync-all">Sync ALL users</button>
+      </div>
+      <pre id="set-sync-report" class="muted" style="margin-top:10px;white-space:pre-wrap"></pre>
+    </div>
+  `;
+
+  el.querySelector('#set-user-save').onclick = async () => {
+    const u = el.querySelector('#set-user').value.trim().toLowerCase();
+    if (!u) return;
+    await ctx.switchUser(u);
+  };
+
+  el.querySelector('#set-save').onclick = async () => {
+    const next = {
+      ...s,
+      supabaseUrl: val('#set-suburl'), supabaseAnonKey: val('#set-subkey'),
+      groqKey: val('#set-groq'), openaiKey: val('#set-openai'),
+      tutorModel: val('#set-tutormodel'), tutorTemperature: numVal('#set-tutortemp'),
+      quizModel: val('#set-quizmodel'), quizTemperature: numVal('#set-quiztemp'),
+      ttsVoice: val('#set-voice'), ttsModel: val('#set-ttsmodel'),
+      groqBase: s.groqBase || DEFAULTS.groqBase, openaiBase: s.openaiBase || DEFAULTS.openaiBase,
+      transcribeModel: s.transcribeModel || DEFAULTS.transcribeModel,
+    };
+    localStorage.setItem(LS.settings, JSON.stringify(next));
+    el.querySelector('#set-status').textContent = 'Saved. Reloading…';
+    setTimeout(() => location.reload(), 500);
+  };
+
+  el.querySelector('#set-sync-user').onclick = async () => {
+    const btn = el.querySelector('#set-sync-user');
+    const out = el.querySelector('#set-sync-report');
+    const refreshMetadata = el.querySelector('#set-sync-refresh').checked;
+    btn.disabled = true; out.textContent = `Syncing ${ctx.userId}…`;
+    try {
+      const r = await store.syncCurriculumToSeed(ctx.userId, { refreshMetadata });
+      out.textContent = `${ctx.userId}: +${r.sectionsAdded} sections, +${r.unitsAdded} units, +${r.vocabAdded} vocab` +
+        (refreshMetadata ? `, refreshed ${r.sectionsUpdated} section(s) / ${r.unitsUpdated} unit(s)` : '');
+    } catch (e) {
+      out.textContent = 'Error: ' + e.message;
+    } finally { btn.disabled = false; }
+  };
+
+  el.querySelector('#set-sync-all').onclick = async () => {
+    if (!confirm('Sync the seed curriculum into EVERY user account? This only adds missing content (and optionally refreshes descriptions) — it never deletes anything. Proceed?')) return;
+    const btn = el.querySelector('#set-sync-all');
+    const out = el.querySelector('#set-sync-report');
+    const refreshMetadata = el.querySelector('#set-sync-refresh').checked;
+    btn.disabled = true; out.textContent = 'Syncing all users…';
+    try {
+      const results = await store.syncCurriculumToSeedForAllUsers({ refreshMetadata });
+      out.textContent = results.map((r) =>
+        `${r.userId}: +${r.sectionsAdded} sections, +${r.unitsAdded} units, +${r.vocabAdded} vocab`).join('\n');
+    } catch (e) {
+      out.textContent = 'Error: ' + e.message;
+    } finally { btn.disabled = false; }
+  };
+
+  function val(sel) { return el.querySelector(sel).value.trim(); }
+  function numVal(sel) { return parseFloat(el.querySelector(sel).value); }
+}
+
+function esc(v) { return (v ?? '').toString().replace(/"/g, '&quot;'); }

@@ -1,0 +1,657 @@
+// seed.js — the proposed starting curriculum, A1 → C1.
+//
+// SOURCING: this is not lifted from any single app's internal unit list
+// (no formal course publishes one at that granularity). It's built from the
+// standard CEFR / Goethe-Institut topic-and-grammar progression that nearly
+// every serious German course (Schritte international, Netzwerk, Aspekte,
+// Goethe-Zertifikat exam syllabuses) follows — greetings before cases,
+// Perfekt before Konjunktiv, etc. Vocab favors natural spoken phrasing
+// ("Ich hätte gern...", "Hast du Lust auf...?") alongside the formal/
+// textbook form where the two diverge, since the goal includes being able
+// to actually hold a conversation in Germany or Austria, not just pass a
+// written exam.
+//
+// This is a starting point, not a fixed syllabus -- everything here is fully
+// editable in the Curriculum Editor afterward (rename, reorder, merge,
+// delete, add). Treat the 40 units below as a strong skeleton to flesh out
+// or rearrange, not a finished product.
+
+export const SEED_CURRICULUM = {
+  sections: [
+    // ----------------------- A1 -----------------------
+    {
+      key: 'first-contact',
+      title: 'First Contact',
+      position: 0,
+      notes: 'A1.1 -- the absolute basics: greetings, numbers, talking about yourself.',
+      units: [
+        {
+          title: 'Greetings & Introductions',
+          source: 'CEFR',
+          objectives: ['greet people formally and informally', "introduce yourself", "ask someone's name"],
+          grammar_focus: ['sein (present tense)', 'du vs. Sie'],
+          vocab: [
+            { german: 'Hallo', english: 'hello' },
+            { german: 'Guten Tag', english: 'good day', notes: 'formal greeting, used with strangers' },
+            { german: 'Ich heiße…', english: 'my name is…' },
+            { german: 'Wie heißt du?', english: "what's your name? (informal)" },
+            { german: 'Freut mich', english: 'nice to meet you' },
+          ],
+        },
+        {
+          title: 'Numbers, Time & Days',
+          source: 'CEFR',
+          objectives: ['count and use numbers', 'tell the time', 'name the days and months'],
+          grammar_focus: ['cardinal numbers', 'time expressions (Wie spät ist es?)'],
+          vocab: [
+            { german: 'eins, zwei, drei', english: 'one, two, three' },
+            { german: 'Wie spät ist es?', english: "what time is it?" },
+            { german: 'der Montag', english: 'Monday' },
+            { german: 'heute / morgen / gestern', english: 'today / tomorrow / yesterday' },
+            { german: 'um … Uhr', english: "at … o'clock" },
+          ],
+        },
+        {
+          title: 'Talking About Yourself',
+          source: 'CEFR',
+          objectives: ['state your origin and nationality', 'talk about basic possessions', 'ask w-questions'],
+          grammar_focus: ['haben (present tense)', 'possessive pronouns (mein/dein)', 'w-questions (wo, wer, was)'],
+          vocab: [
+            { german: 'Ich komme aus…', english: 'I come from…' },
+            { german: 'Woher kommst du?', english: 'where are you from?', notes: 'woher = from where; distinct from wo (location) and wohin (to where).' },
+            { german: 'mein / meine', english: 'my (masc./fem.)' },
+            { german: 'ich habe', english: 'I have' },
+            { german: 'der Beruf', english: 'profession, job' },
+            { german: 'Österreich', english: 'Austria', notes: 'Spelling to reinforce: Ö-ster-reich.' },
+          ],
+        },
+      ],
+    },
+    {
+      key: 'everyday-basics',
+      title: 'Everyday Basics',
+      position: 1,
+      notes: 'A1.2 -- family, food, shopping, getting around.',
+      units: [
+        {
+          title: 'Family & People',
+          source: 'CEFR',
+          objectives: ['name family members', 'describe people simply', 'use possessives across genders'],
+          grammar_focus: ['possessive adjectives (sein/ihr)', 'plural noun forms'],
+          vocab: [
+            { german: 'die Familie', english: 'the family' },
+            { german: 'die Mutter / der Vater', english: 'mother / father' },
+            { german: 'die Geschwister', english: 'siblings' },
+            { german: 'verheiratet', english: 'married' },
+            { german: 'das Kind, die Kinder', english: 'child, children' },
+          ],
+        },
+        {
+          title: 'Café & Restaurant',
+          source: 'CEFR',
+          objectives: ['order food and drink', 'ask for the bill', 'express preferences politely'],
+          grammar_focus: ['möchten (would like)', 'accusative case -- intro'],
+          vocab: [
+            { german: 'ich möchte', english: 'I would like', notes: "Watch the umlaut: möchte, NOT mochte (that's past tense of mögen)." },
+            { german: 'Ich hätte gern…', english: 'I would like to have…', notes: 'More natural in spoken German than "ich möchte" when ordering.' },
+            { german: 'die Speisekarte', english: 'the menu' },
+            { german: 'Die Rechnung, bitte', english: 'the bill, please' },
+            { german: 'lecker', english: 'tasty, delicious', notes: 'Common everyday praise word for food.' },
+            { german: 'ausgezeichnet', english: 'excellent', notes: 'Spelling to reinforce: aus-ge-zeich-net.' },
+          ],
+        },
+        {
+          title: 'Shopping & Money',
+          source: 'CEFR',
+          objectives: ['ask prices', 'shop for clothes and groceries', 'handle a basic transaction'],
+          grammar_focus: ['accusative with direct objects', 'dieser/diese/dieses'],
+          vocab: [
+            { german: 'Was kostet das?', english: 'what does that cost?' },
+            { german: 'Das ist mir zu teuer', english: "that's too expensive for me" },
+            { german: 'die Kleidung', english: 'clothing' },
+            { german: 'bar / mit Karte zahlen', english: 'to pay cash / by card' },
+            { german: 'der Einkaufswagen', english: 'the shopping cart' },
+          ],
+        },
+        {
+          title: 'Directions & Getting Around',
+          source: 'CEFR',
+          objectives: ['ask for and follow directions', 'use public transport'],
+          grammar_focus: ['wo vs. wohin vs. woher', 'dative after prepositions (aus, zu, mit)'],
+          vocab: [
+            { german: 'Wo ist…?', english: 'where is…?', notes: 'wo = location; wohin = motion toward; woher = origin.' },
+            { german: 'links / rechts / geradeaus', english: 'left / right / straight ahead' },
+            { german: 'die Haltestelle', english: 'the (bus/tram) stop' },
+            { german: 'Wie komme ich zu…?', english: 'how do I get to…?' },
+            { german: 'die Kreuzung', english: 'the intersection' },
+          ],
+        },
+      ],
+    },
+    {
+      key: 'home-routine',
+      title: 'Home & Routine',
+      position: 2,
+      notes: 'A1.3 -> A2.1 -- describing your home and daily life.',
+      units: [
+        {
+          title: 'Housing & Furniture',
+          source: 'CEFR',
+          objectives: ['describe a home', 'name rooms and furniture', 'use es gibt'],
+          grammar_focus: ['es gibt + accusative', 'prepositions of place (in, auf, unter) + dative'],
+          vocab: [
+            { german: 'die Wohnung', english: 'the apartment' },
+            { german: 'das Zimmer', english: 'the room' },
+            { german: 'es gibt', english: 'there is / there are' },
+            { german: 'der Schreibtisch', english: 'the desk' },
+            { german: 'gemütlich', english: 'cozy' },
+          ],
+        },
+        {
+          title: 'Daily Routine',
+          source: 'CEFR',
+          objectives: ['describe a typical day', 'use reflexive and separable verbs'],
+          grammar_focus: ['reflexive verbs (sich duschen)', 'separable-prefix verbs (aufstehen)'],
+          vocab: [
+            { german: 'aufstehen', english: 'to get up', notes: 'Separable: "Ich stehe um 7 Uhr auf."' },
+            { german: 'sich duschen', english: 'to shower' },
+            { german: 'frühstücken', english: 'to eat breakfast' },
+            { german: 'der Alltag', english: 'everyday life, routine' },
+            { german: 'meistens', english: 'usually, mostly' },
+          ],
+        },
+        {
+          title: 'Weather & Seasons',
+          source: 'CEFR',
+          objectives: ['discuss the weather and seasons', 'use impersonal "es"'],
+          grammar_focus: ['impersonal verbs (es regnet)', 'adjective agreement'],
+          vocab: [
+            { german: 'Wie ist das Wetter?', english: "how's the weather?" },
+            { german: 'es regnet / es schneit', english: "it's raining / it's snowing" },
+            { german: 'der Sommer / der Winter', english: 'summer / winter' },
+            { german: 'warm / kalt', english: 'warm / cold' },
+            { german: 'die Jahreszeit', english: 'the season' },
+          ],
+        },
+      ],
+    },
+
+    // ----------------------- A2 -----------------------
+    {
+      key: 'the-past',
+      title: 'The Past',
+      position: 3,
+      notes: 'A2.1 -- narrating completed actions.',
+      units: [
+        {
+          title: 'Perfekt — Regular Verbs',
+          source: 'CEFR',
+          objectives: ['form the present perfect with weak verbs', 'narrate simple completed actions'],
+          grammar_focus: ['haben + ge-(stem)-t', 'position of the past participle'],
+          vocab: [
+            { german: 'gemacht', english: 'made, done', notes: 'from machen' },
+            { german: 'gespielt', english: 'played', notes: 'from spielen' },
+            { german: 'gearbeitet', english: 'worked', notes: 'from arbeiten' },
+            { german: 'gekauft', english: 'bought', notes: 'from kaufen' },
+            { german: 'Ich habe … gemacht', english: 'I did/made …' },
+          ],
+        },
+        {
+          title: 'Perfekt — Irregular & Sein-Verbs',
+          source: 'CEFR',
+          objectives: ['form Perfekt with strong verbs', 'use sein-verbs for motion/change of state'],
+          grammar_focus: ['sein + ge-(stem)-en', 'common irregular participles'],
+          vocab: [
+            { german: 'gegangen', english: 'gone, walked', notes: 'sein + gegangen' },
+            { german: 'gefahren', english: 'driven, traveled', notes: 'sein + gefahren' },
+            { german: 'gegessen', english: 'eaten', notes: 'haben + gegessen' },
+            { german: 'gesehen', english: 'seen', notes: 'haben + gesehen' },
+            { german: 'geblieben', english: 'stayed', notes: 'sein + geblieben' },
+          ],
+        },
+        {
+          title: 'Last Weekend',
+          source: 'CEFR',
+          objectives: ['narrate a recent event in sequence', 'use time connectors'],
+          grammar_focus: ['time connectors (zuerst, dann, danach, zum Schluss)'],
+          vocab: [
+            { german: 'letztes Wochenende', english: 'last weekend' },
+            { german: 'zuerst / dann / danach', english: 'first / then / afterward' },
+            { german: 'es war…', english: 'it was…' },
+            { german: "Wie war's?", english: 'how was it?', notes: 'Very natural conversational question.' },
+            { german: 'total', english: 'totally, really', notes: 'Colloquial intensifier: "Es war total schön."' },
+          ],
+        },
+      ],
+    },
+    {
+      key: 'plans-travel',
+      title: 'Plans & Travel',
+      position: 4,
+      notes: 'A2.2 -- the future, travel, invitations.',
+      units: [
+        {
+          title: 'Future Plans',
+          source: 'CEFR',
+          objectives: ['talk about future plans', 'use werden and present-as-future'],
+          grammar_focus: ['werden + infinitive', 'present tense as future with time markers'],
+          vocab: [
+            { german: 'ich werde…', english: 'I will…' },
+            { german: 'vorhaben', english: 'to plan, intend', notes: '"Was hast du vor?" = What are your plans?' },
+            { german: 'nächste Woche', english: 'next week' },
+            { german: 'bald', english: 'soon' },
+            { german: 'vielleicht', english: 'maybe, perhaps' },
+          ],
+        },
+        {
+          title: 'Travel & Vacation',
+          source: 'CEFR',
+          objectives: ['discuss travel plans and experiences', 'handle basic travel booking language'],
+          grammar_focus: ['prepositions of place with countries (in, nach)', 'accusative/dative review'],
+          vocab: [
+            { german: 'der Urlaub', english: 'the vacation' },
+            { german: 'die Reise', english: 'the trip' },
+            { german: 'Ich fliege nach…', english: "I'm flying to…", notes: '"nach" for cities/countries without an article.' },
+            { german: 'die Unterkunft', english: 'the accommodation' },
+            { german: 'Gute Reise!', english: 'have a good trip!', notes: 'Natural farewell phrase.' },
+          ],
+        },
+        {
+          title: 'Invitations & Appointments',
+          source: 'CEFR',
+          objectives: ['make, accept, and decline invitations', 'arrange a meeting time'],
+          grammar_focus: ['modal verbs review (können/möchten)', 'question word order'],
+          vocab: [
+            { german: 'Hast du Lust auf…?', english: 'do you feel like…?', notes: 'Natural, casual way to invite someone -- more relaxed than "möchtest du".' },
+            { german: 'Ich habe leider keine Zeit', english: "unfortunately I don't have time" },
+            { german: 'der Termin', english: 'the appointment' },
+            { german: 'Passt dir…?', english: 'does … work for you?', notes: 'Natural scheduling phrase.' },
+            { german: 'Klar, gerne!', english: 'sure, gladly!', notes: 'Natural enthusiastic acceptance.' },
+          ],
+        },
+      ],
+    },
+    {
+      key: 'body-health-freetime',
+      title: 'Body, Health & Free Time',
+      position: 5,
+      notes: 'A2.3 -- health, hobbies, sport.',
+      units: [
+        {
+          title: "At the Doctor's",
+          source: 'CEFR',
+          objectives: ['describe symptoms', 'understand basic medical advice'],
+          grammar_focus: ['müssen/sollen for advice and obligation', 'dative construction: [body part] tut mir weh'],
+          vocab: [
+            { german: 'Mir tut der Kopf weh', english: 'my head hurts', notes: 'Dative construction: [body part] tut mir weh.' },
+            { german: 'der Schmerz', english: 'the pain' },
+            { german: 'die Apotheke', english: 'the pharmacy' },
+            { german: 'Ich fühle mich krank', english: 'I feel sick' },
+            { german: 'Gute Besserung', english: 'get well soon', notes: 'Said to someone who is sick.' },
+          ],
+        },
+        {
+          title: 'Hobbies & Interests',
+          source: 'CEFR',
+          objectives: ['describe hobbies', 'express degrees of preference'],
+          grammar_focus: ['gern / lieber / am liebsten', 'verb + gern'],
+          vocab: [
+            { german: 'Ich spiele gern…', english: 'I like to play…' },
+            { german: 'am liebsten', english: 'most of all, favorite', notes: 'Superlative form of gern.' },
+            { german: 'die Freizeit', english: 'free time' },
+            { german: 'langweilig / spannend', english: 'boring / exciting' },
+            { german: 'Was machst du gern?', english: 'what do you like to do?', notes: 'Natural conversational opener.' },
+          ],
+        },
+        {
+          title: 'Sports & Leisure',
+          source: 'CEFR',
+          objectives: ['discuss sports activities', 'make plans for leisure time'],
+          grammar_focus: ['verb + accusative object review', 'prepositional verbs (sich interessieren für)'],
+          vocab: [
+            { german: 'Sport treiben', english: 'to do/play sports' },
+            { german: 'sich interessieren für', english: 'to be interested in' },
+            { german: 'joggen / schwimmen / wandern', english: 'to jog / swim / hike' },
+            { german: 'der Verein', english: 'the club (e.g. sports club)' },
+            { german: 'Lust haben', english: 'to feel like (doing something)', notes: 'Reused naturally: "Hast du Lust mitzukommen?"' },
+          ],
+        },
+      ],
+    },
+    {
+      key: 'work-practical-life',
+      title: 'Work & Practical Life',
+      position: 6,
+      notes: 'A2.4 -> A2.5 -- jobs, errands, comparisons.',
+      units: [
+        {
+          title: 'Jobs & Workplace',
+          source: 'CEFR',
+          objectives: ['describe your job and workplace', 'talk about job duties'],
+          grammar_focus: ['von Beruf', 'present tense for habitual work activities'],
+          vocab: [
+            { german: 'von Beruf', english: 'by profession', notes: '"Ich bin Lehrer von Beruf."' },
+            { german: 'das Büro', english: 'the office' },
+            { german: 'der Kollege / die Kollegin', english: 'colleague (m./f.)' },
+            { german: 'Ich arbeite als…', english: 'I work as…' },
+            { german: 'die Besprechung', english: 'the meeting' },
+          ],
+        },
+        {
+          title: 'Bank, Post & Bureaucracy',
+          source: 'CEFR',
+          objectives: ['handle errands at a bank or post office', 'navigate basic German bureaucracy'],
+          grammar_focus: ['polite requests (Ich hätte gern / Könnten Sie…)', 'modal verbs in formal register'],
+          vocab: [
+            { german: 'ein Konto eröffnen', english: 'to open an account' },
+            { german: 'das Formular ausfüllen', english: 'to fill out the form' },
+            { german: 'die Anmeldung', english: 'the registration', notes: "e.g. at the Einwohnermeldeamt (residents' registration office)." },
+            { german: 'Könnten Sie mir helfen?', english: 'could you help me?', notes: 'Polite formal request.' },
+            { german: 'der Briefumschlag', english: 'the envelope' },
+          ],
+        },
+        {
+          title: 'Comparing Things',
+          source: 'CEFR',
+          objectives: ['compare people, places, and things'],
+          grammar_focus: ['comparative and superlative adjectives (-er, am -sten)'],
+          vocab: [
+            { german: 'größer als', english: 'bigger than' },
+            { german: 'am besten', english: 'the best', notes: 'Irregular superlative of gut.' },
+            { german: 'genauso … wie', english: 'just as … as' },
+            { german: 'im Vergleich zu', english: 'in comparison to' },
+            { german: 'viel besser', english: 'much better' },
+          ],
+        },
+      ],
+    },
+
+    // ----------------------- B1 -----------------------
+    {
+      key: 'opinions-reasons',
+      title: 'Opinions & Reasons',
+      position: 7,
+      notes: 'B1.1 -- arguing a point, giving reasons, basic conditions.',
+      units: [
+        {
+          title: 'Expressing Opinions',
+          source: 'CEFR',
+          objectives: ['state and justify opinions', 'agree and disagree'],
+          grammar_focus: ['dass-clauses', 'ich finde/glaube/denke + dass'],
+          vocab: [
+            { german: 'Ich finde, dass…', english: 'I think that…', notes: 'dass sends the verb to the end of the clause.' },
+            { german: 'meiner Meinung nach', english: 'in my opinion' },
+            { german: 'Das stimmt', english: "that's right, true" },
+            { german: 'Da bin ich anderer Meinung', english: 'I disagree', notes: 'More formal/explicit than just saying "nein".' },
+            { german: 'na ja', english: 'well…', notes: 'Colloquial filler used when hedging an opinion.' },
+          ],
+        },
+        {
+          title: 'Giving Reasons',
+          source: 'CEFR',
+          objectives: ['explain causes and reasons', 'link clauses with weil'],
+          grammar_focus: ['weil-clauses (verb-final)', 'deshalb/deswegen (verb-second)'],
+          vocab: [
+            { german: 'weil', english: 'because', notes: 'Sends the verb to the end: "…, weil ich müde bin."' },
+            { german: 'deshalb / deswegen', english: "therefore, that's why", notes: 'Triggers normal verb-second order, unlike weil.' },
+            { german: 'der Grund', english: 'the reason' },
+            { german: 'aus diesem Grund', english: 'for this reason' },
+            { german: 'nämlich', english: 'namely, you see', notes: 'Common spoken connector that explains a reason.' },
+          ],
+        },
+        {
+          title: 'Conditions',
+          source: 'CEFR',
+          objectives: ['express conditions and basic hypothetical situations'],
+          grammar_focus: ['wenn-clauses (real conditions)', 'word order with wenn'],
+          vocab: [
+            { german: 'wenn', english: 'if, when', notes: 'Verb-final clause; differs from "wann" (interrogative "when").' },
+            { german: 'falls', english: 'in case' },
+            { german: 'Wenn ich Zeit habe, …', english: 'if I have time, …' },
+            { german: 'unter der Bedingung, dass', english: 'on the condition that' },
+            { german: 'sonst', english: 'otherwise' },
+          ],
+        },
+      ],
+    },
+    {
+      key: 'narration',
+      title: 'Narration',
+      position: 8,
+      notes: 'B1.2 -- telling stories, relative clauses, life history.',
+      units: [
+        {
+          title: 'Präteritum for Storytelling',
+          source: 'CEFR',
+          objectives: ['use the simple past for narration, especially common verbs'],
+          grammar_focus: ['Präteritum of sein/haben/modal verbs', 'written vs. spoken past usage'],
+          vocab: [
+            { german: 'ich war / ich hatte', english: 'I was / I had' },
+            { german: 'es gab', english: 'there was/were' },
+            { german: 'konnte / musste / wollte', english: 'could / had to / wanted to', notes: 'Präteritum of modal verbs.' },
+            { german: 'damals', english: 'back then, at that time' },
+            { german: 'Es war einmal…', english: 'once upon a time…', notes: "Classic fairy-tale opener -- a nice hook before reading German children's books." },
+          ],
+        },
+        {
+          title: 'Relative Clauses',
+          source: 'CEFR',
+          objectives: ['combine sentences using relative pronouns', 'add descriptive detail'],
+          grammar_focus: ['relative pronouns (der/die/das)', 'case agreement in relative clauses'],
+          vocab: [
+            { german: 'der Mann, der…', english: 'the man who…' },
+            { german: 'die Frau, die…', english: 'the woman who…' },
+            { german: 'das Buch, das…', english: 'the book that…' },
+            { german: 'mit dem/der…', english: 'with whom/which', notes: 'Dative relative pronoun.' },
+            { german: 'dessen / deren', english: 'whose', notes: 'Genitive relative pronoun.' },
+          ],
+        },
+        {
+          title: 'Personal History & Milestones',
+          source: 'CEFR',
+          objectives: ['talk about life events and personal history fluently'],
+          grammar_focus: ['mixed past tense usage (Perfekt + Präteritum)', 'time expressions for life stages'],
+          vocab: [
+            { german: 'aufwachsen', english: 'to grow up' },
+            { german: 'die Kindheit', english: 'the childhood' },
+            { german: 'umziehen', english: 'to move (residence)' },
+            { german: 'seitdem', english: 'since then' },
+            { german: 'Ich bin aufgewachsen in…', english: 'I grew up in…' },
+          ],
+        },
+      ],
+    },
+    {
+      key: 'society-media',
+      title: 'Society & Media',
+      position: 9,
+      notes: 'B1.3 -> B1.4 -- news, environment, formal register.',
+      units: [
+        {
+          title: 'News & Current Events',
+          source: 'CEFR',
+          objectives: ['discuss news topics', 'understand headlines'],
+          grammar_focus: ['passive voice -- recognition (wird gemacht)', 'nominal style in headlines'],
+          vocab: [
+            { german: 'die Nachrichten', english: 'the news' },
+            { german: 'die Schlagzeile', english: 'the headline' },
+            { german: 'berichten über', english: 'to report on' },
+            { german: 'die Wirtschaft', english: 'the economy' },
+            { german: 'laut einer Studie', english: 'according to a study', notes: 'Formal/journalistic phrase.' },
+          ],
+        },
+        {
+          title: 'Environment & Sustainability',
+          source: 'CEFR',
+          objectives: ['discuss environmental topics and personal habits'],
+          grammar_focus: ['nominalized verbs (das Recyceln)', 'necessity (man muss/sollte)'],
+          vocab: [
+            { german: 'der Klimawandel', english: 'climate change' },
+            { german: 'nachhaltig', english: 'sustainable' },
+            { german: 'die Umwelt schützen', english: 'to protect the environment' },
+            { german: 'den Müll trennen', english: 'to separate trash, recycle', notes: 'A very real everyday German cultural practice.' },
+            { german: 'erneuerbare Energien', english: 'renewable energy' },
+          ],
+        },
+        {
+          title: 'Genitive & Formal Register',
+          source: 'CEFR',
+          objectives: ['use the genitive case', 'recognize formal/written register'],
+          grammar_focus: ['genitive case (des/der + noun-s)', 'wegen + genitive'],
+          vocab: [
+            { german: 'wegen des Wetters', english: 'because of the weather', notes: 'wegen triggers genitive in formal register (often dative in casual speech).' },
+            { german: 'die Meinung der Bevölkerung', english: 'the opinion of the population' },
+            { german: 'trotz', english: 'despite', notes: '+ genitive' },
+            { german: 'innerhalb / außerhalb', english: 'within / outside', notes: '+ genitive' },
+            { german: 'das Eigentum', english: 'the property' },
+          ],
+        },
+      ],
+    },
+
+    // ----------------------- B2 -----------------------
+    {
+      key: 'professional-german',
+      title: 'Professional German',
+      position: 10,
+      notes: 'B2.1 -- passive voice, formal writing, professional situations.',
+      units: [
+        {
+          title: 'Passive Voice',
+          source: 'CEFR',
+          objectives: ['form and use the passive voice in present and past'],
+          grammar_focus: ['werden-passive (present & Perfekt)', 'passive with modal verbs'],
+          vocab: [
+            { german: 'wird gemacht', english: 'is being done/made' },
+            { german: 'wurde gebaut', english: 'was built' },
+            { german: 'von / durch', english: 'by', notes: 'Marks the agent in passive constructions.' },
+            { german: 'man', english: 'one, people', notes: 'Informal alternative to passive in spoken German -- Germans often prefer "man macht das so" over passive in casual speech.' },
+            { german: 'das Passiv', english: 'the passive voice' },
+          ],
+        },
+        {
+          title: 'Nominalization & Formal Writing',
+          source: 'CEFR',
+          objectives: ['convert verbs and adjectives into nouns for formal writing'],
+          grammar_focus: ['nominalization patterns (-ung, -heit, -keit)', 'formal connectors (zudem, dennoch)'],
+          vocab: [
+            { german: 'die Entscheidung', english: 'the decision', notes: 'from entscheiden' },
+            { german: 'die Möglichkeit', english: 'the possibility' },
+            { german: 'zudem', english: 'moreover' },
+            { german: 'dennoch', english: 'nevertheless' },
+            { german: 'im Hinblick auf', english: 'with regard to', notes: 'Formal connector.' },
+          ],
+        },
+        {
+          title: 'Job Interviews & Negotiation',
+          source: 'CEFR',
+          objectives: ['handle a job interview', 'negotiate professionally'],
+          grammar_focus: ['Konjunktiv II for polite requests (Ich würde gern…)', 'formal professional vocabulary'],
+          vocab: [
+            { german: 'Ich würde gern…', english: 'I would like to…', notes: 'Polite/professional register.' },
+            { german: 'die Stärken und Schwächen', english: 'strengths and weaknesses' },
+            { german: 'das Gehalt verhandeln', english: 'to negotiate salary' },
+            { german: 'die Bewerbung', english: 'the application' },
+            { german: 'Ich bringe … Erfahrung mit', english: 'I bring … experience' },
+          ],
+        },
+      ],
+    },
+    {
+      key: 'nuance-debate',
+      title: 'Nuance & Debate',
+      position: 11,
+      notes: 'B2.2 -> B2.3 -- hypotheticals, reported speech, persuasion.',
+      units: [
+        {
+          title: 'Konjunktiv II — Hypotheticals',
+          source: 'CEFR',
+          objectives: ['express hypothetical situations and wishes'],
+          grammar_focus: ['würde + infinitive', 'irregular Konjunktiv II forms (wäre, hätte, könnte)'],
+          vocab: [
+            { german: 'Wenn ich Zeit hätte…', english: 'if I had time…' },
+            { german: 'Ich wäre gern…', english: 'I would like to be…' },
+            { german: 'An deiner Stelle würde ich…', english: 'in your place, I would…', notes: 'Very natural way to give advice.' },
+            { german: "Das wär's", english: "that would be it, that's it", notes: 'Casual closing phrase.' },
+            { german: 'als ob', english: 'as if', notes: '+ Konjunktiv II' },
+          ],
+        },
+        {
+          title: 'Reported Speech',
+          source: 'CEFR',
+          objectives: ['report what others said', 'recognize Konjunktiv I in news and formal contexts'],
+          grammar_focus: ['Konjunktiv I forms (er sei, er habe)', 'indirect speech word order'],
+          vocab: [
+            { german: 'Er sagte, er sei…', english: 'he said he was…', notes: 'Konjunktiv I, common in journalism.' },
+            { german: 'Sie behauptet, dass…', english: 'she claims that…' },
+            { german: 'angeblich', english: 'allegedly, supposedly' },
+            { german: 'laut Aussage von…', english: 'according to the statement of…' },
+            { german: 'er meinte', english: 'he said, remarked', notes: 'A more casual reporting verb than "sagte".' },
+          ],
+        },
+        {
+          title: 'Debating & Persuading',
+          source: 'CEFR',
+          objectives: ['build arguments', 'concede points', 'persuade in discussion'],
+          grammar_focus: ['concessive connectors (obwohl, trotzdem)', 'structuring an argument'],
+          vocab: [
+            { german: 'obwohl', english: 'although' },
+            { german: 'trotzdem', english: 'nevertheless, still' },
+            { german: 'einerseits … andererseits', english: 'on one hand … on the other hand' },
+            { german: 'Das Argument überzeugt mich (nicht)', english: "the argument does(n't) convince me" },
+            { german: 'Ich gebe zu, dass…', english: 'I admit that…' },
+          ],
+        },
+      ],
+    },
+
+    // ----------------------- C1 -----------------------
+    {
+      key: 'advanced-fluency',
+      title: 'Advanced Fluency',
+      position: 12,
+      notes: 'C1 -- idiom, literary/academic register, near-native style.',
+      units: [
+        {
+          title: 'Idioms & Colloquial Register',
+          source: 'CEFR',
+          objectives: ['recognize and use common idioms', 'shift naturally between formal and informal register'],
+          grammar_focus: ['idiomatic expressions', 'particle usage (doch, mal, halt) for natural tone'],
+          vocab: [
+            { german: 'die Daumen drücken', english: "to keep one's fingers crossed", notes: 'Literally "press thumbs".' },
+            { german: 'ins Blaue hinein', english: 'on a whim, without a plan' },
+            { german: 'das ist mir Wurst', english: "I don't care", notes: 'Literally "that\'s sausage to me" -- very colloquial, friends only.' },
+            { german: 'na klar', english: 'sure, of course', notes: 'Casual.' },
+            { german: 'doch', english: 'yet, still, contradiction particle', notes: 'Used to contradict a negative statement, e.g. "Du kommst nicht?" "Doch!"' },
+          ],
+        },
+        {
+          title: 'Literary & Academic Texts',
+          source: 'CEFR',
+          objectives: ['read and discuss literary or academic excerpts', 'recognize complex sentence structures'],
+          grammar_focus: ['extended attributes (erweiterte Partizipialattribute)', 'complex subordinate clause chains'],
+          vocab: [
+            { german: 'die Erzählperspektive', english: 'the narrative perspective' },
+            { german: 'die These', english: 'the thesis' },
+            { german: 'im Gegensatz zu', english: 'in contrast to' },
+            { german: 'Es lässt sich sagen, dass…', english: 'it can be said that…' },
+            { german: 'die Anspielung', english: 'the allusion' },
+          ],
+        },
+        {
+          title: 'Advanced Connectors & Style',
+          source: 'CEFR',
+          objectives: ['write and speak with stylistic variety at near-native fluency'],
+          grammar_focus: ['advanced connectors (zumal, indes, mithin)', 'stylistic register shifting'],
+          vocab: [
+            { german: 'zumal', english: 'especially since' },
+            { german: 'indes', english: 'however, meanwhile', notes: 'Literary register.' },
+            { german: 'mithin', english: 'therefore, consequently', notes: 'Formal/literary.' },
+            { german: 'geschweige denn', english: 'let alone' },
+            { german: 'alles in allem', english: 'all in all', notes: 'Good natural wrap-up phrase for conversation or essays.' },
+          ],
+        },
+      ],
+    },
+  ],
+};
