@@ -288,7 +288,7 @@ async function mountSentencePhase() {
   let items = [];
   try {
     const gen = await quizCall(buildSentencePrompt(sessionCtx), 'Generate the sentence drills now.');
-    items = gen.items || [];
+    items = (gen.items || []).filter((it) => isWellFormed(it, { allowFillBlank: false }));
   } catch (e) {
     zone.innerHTML = `<div class="card"><p class="verdict wrong">Couldn't build sentences: ${esc(e.message)}</p><button class="btn primary" id="skip-sent">Skip to conversation →</button></div>`;
     zone.querySelector('#skip-sent').onclick = nextPhase;
@@ -369,7 +369,8 @@ async function mountQuizPhase() {
   zone.innerHTML = `<div class="card"><p class="muted">Building quiz…</p></div>`;
   try {
     const gen = await quizCall(buildQuizPrompt(sessionCtx, 'generate'), 'Generate the quiz now.');
-    quiz = { questions: gen.questions || [], idx: 0, results: [] };
+    const questions = (gen.questions || []).filter((q) => isWellFormed(q, { allowFillBlank: true }));
+    quiz = { questions, idx: 0, results: [] };
     if (!quiz.questions.length) throw new Error('No questions returned.');
     renderQuestion();
   } catch (e) {
@@ -502,6 +503,23 @@ async function endSession() {
     await store.updateSession(session.session_id, { ended_at: new Date().toISOString(), outcome: lastOutcome });
   }
   await renderLanding();
+}
+
+// Drops items whose prompt/answer don't hold together — the model occasionally
+// blends fields between items in a batch, especially for fill_blank (a mismatched
+// blank/answer pair makes the question impossible to answer correctly). Better to
+// show one fewer item than an unanswerable one.
+function isWellFormed(it, { allowFillBlank } = {}) {
+  if (!it || !it.prompt || !it.answer) return false;
+  const prompt = String(it.prompt).trim();
+  const answer = String(it.answer).trim();
+  if (!prompt || !answer) return false;
+  if (it.type === 'fill_blank') {
+    if (!allowFillBlank) return false;
+    if (!/_{3,}/.test(prompt)) return false;               // must contain a blank marker
+    if (/[.!?].*[.!?]/.test(answer)) return false;          // answer reads like >1 sentence
+  }
+  return true;
 }
 
 function shuffle(arr) {

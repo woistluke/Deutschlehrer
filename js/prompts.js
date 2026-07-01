@@ -123,6 +123,13 @@ Mix these three types roughly evenly:
 
 Use the lesson vocabulary wherever it fits. Keep everything at A1–A2.
 
+Each of the 5 items is fully independent: its "answer" must be the direct, faithful
+solution to that SAME item's "prompt" only — never borrow wording, vocabulary, or
+sentence fragments from a different item in this batch. Each "prompt" and each
+"answer" is exactly one complete sentence (for respond_de, one natural reply) — do
+not merge two sentences together into one field. Never produce a "fill_blank" item
+in this phase — only en_to_de, de_to_en, or respond_de.
+
 VOCABULARY:
 ${pool.map((p) => `- ${p}`).join('\n') || '- (none)'}
 
@@ -142,6 +149,17 @@ export function buildQuizPrompt(ctx, stage) {
 
   if (stage === 'generate') {
     return `You are a German quiz generator. Build a short mixed quiz (5–7 items) from the item pool below. Mix directions: some German→English, some English→German, at least one fill-in-the-blank sentence, and at least one that targets a known weak point.
+
+Every question is fully independent: its "answer" must be the direct, faithful
+solution to that SAME question's "prompt" only — never borrow wording or content
+from a different question in this batch.
+
+For any "fill_blank" question specifically: write "prompt" as one complete German
+sentence built around exactly ONE pool item, with the single missing word or short
+phrase replaced by a blank shown as exactly "____" (four underscores) — the rest of
+the sentence stays fully written out. The "answer" field for that question must
+contain ONLY the missing word/phrase that fills the blank — never the full sentence,
+and never content tied to a different pool item.
 
 ITEM POOL:
 ${pool.map((p) => `- ${p}`).join('\n')}
