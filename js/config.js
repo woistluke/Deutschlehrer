@@ -30,7 +30,7 @@ export const SRS_LADDER_DAYS = [0, 1, 3, 7, 14, 30, 90];
 // stragglers keep getting prioritized into later units' sessions instead
 // (see getUnmasteredFromPriorUnits in store.js) and can push the unit over
 // the line passively once they cross the threshold.
-export const UNIT_COMPLETION_RATIO = 0.9;
+export const UNIT_COMPLETION_RATIO = 0.85;
 
 // How many review items to surface per session, and how strongly to favor
 // recent units. Recency weight multiplies an item's selection priority by
