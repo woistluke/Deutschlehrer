@@ -4,6 +4,7 @@
 
 import { LS, REVIEW } from './config.js';
 import { SEED_CURRICULUM } from './seed.js';
+import { applyAnswer } from './srs.js';
 
 let client = null;       // supabase client when remote
 let remote = false;
@@ -299,7 +300,9 @@ export async function getDueReviewItems(userId, limit = REVIEW.maxItemsPerSessio
   const lastIndex = order.length - 1;
 
   const now = Date.now();
-  const due = prog.filter((p) => !p.next_due || new Date(p.next_due).getTime() <= now);
+  const due = prog
+    .filter((p) => (p.item_type || 'vocab') === 'vocab')
+    .filter((p) => !p.next_due || new Date(p.next_due).getTime() <= now);
   due.forEach((p) => {
     const pos = orderIndex[p.unit_id] ?? 0;
     const recency = REVIEW.recencyBiased ? 1 / (1 + (lastIndex - pos)) : 1;
@@ -313,6 +316,7 @@ export async function getDueReviewItems(userId, limit = REVIEW.maxItemsPerSessio
 export async function getWeakPoints(userId, limit = 5) {
   const prog = await allProgress(userId);
   return prog
+    .filter((p) => (p.item_type || 'vocab') === 'vocab')
     .filter((p) => (p.mastery_score || 0) < 0.5 || (p.known_errors || []).length)
     .sort((a, b) => (a.mastery_score || 0) - (b.mastery_score || 0))
     .slice(0, limit);
@@ -344,4 +348,45 @@ export async function getUnmasteredFromPriorUnits(userId, activeUnitId, limit = 
   });
   weak.sort((a, b) => a.unitPos - b.unitPos || a.mastery - b.mastery);
   return weak.slice(0, limit).map((w) => w.v);
+}
+
+// ---- grammar progress ------------------------------------------------------
+// Grammar mastery reuses the same `progress` table as vocab (item_type:
+// 'grammar'), keyed by the grammar_focus label text itself instead of a
+// vocab_id. Populated from structured signals the tutor tags during
+// conversation (see prompts.js structuredFormat's `grammar_signals`).
+export async function recordGrammarSignal(userId, label, correct) {
+  if (!label) return;
+  const existing = await getProgress(userId, label);
+  const upd = applyAnswer(existing || {}, correct);
+  return upsertProgress(userId, label, { item_type: 'grammar', ...upd });
+}
+
+// Grammar the learner can be assumed to know: every grammar_focus label from
+// unlocked units up to and including the active unit, minus any label whose
+// recorded mastery has fallen below the same weak-point threshold used
+// elsewhere — a label with no progress row yet defaults to "known" (trust the
+// curriculum's own unlock ordering until conversation signals say otherwise).
+export async function getGrammarLearnedSoFar(userId, activeUnitId) {
+  const [progress, sections] = await Promise.all([allProgress(userId), getCurriculum(userId)]);
+  const grammarByLabel = {};
+  progress.forEach((p) => { if ((p.item_type || 'vocab') === 'grammar') grammarByLabel[p.item_id] = p; });
+
+  const flat = sections.flatMap((s) => s.units);
+  const activeIdx = flat.findIndex((u) => u.unit_id === activeUnitId);
+  const coveredUnits = (activeIdx === -1 ? flat : flat.slice(0, activeIdx + 1)).filter((u) => u.status !== 'locked');
+
+  const labels = [...new Set(coveredUnits.flatMap((u) => u.grammar_focus || []))];
+  return labels.filter((label) => (grammarByLabel[label]?.mastery_score ?? 1) >= 0.5);
+}
+
+// Grammar labels with low mastery or recent errors, mirroring getWeakPoints.
+export async function getWeakGrammar(userId, limit = 5) {
+  const prog = await allProgress(userId);
+  return prog
+    .filter((p) => p.item_type === 'grammar')
+    .filter((p) => (p.mastery_score || 0) < 0.5 || (p.known_errors || []).length)
+    .sort((a, b) => (a.mastery_score || 0) - (b.mastery_score || 0))
+    .slice(0, limit)
+    .map((p) => p.item_id);
 }

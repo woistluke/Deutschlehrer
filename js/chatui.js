@@ -9,11 +9,12 @@ export function escapeHtml(s) {
 }
 
 // Create a rich chat inside `el`.
-//   getSystemPrompt : () => string   (read fresh each turn so level/topic edits apply)
-//   onVocab         : (vocabList) => void   notified when collected vocab changes
-//   placeholder     : input placeholder
+//   getSystemPrompt   : () => string   (read fresh each turn so level/topic edits apply)
+//   onVocab           : (vocabList) => void   notified when collected vocab changes
+//   onGrammarSignal   : (signals) => void   notified with [{label, status}] per turn
+//   placeholder       : input placeholder
 // Returns { open, getVocab, getHistory }.
-export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, placeholder = 'Schreib auf Deutsch…' }) {
+export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, onGrammarSignal = () => {}, placeholder = 'Schreib auf Deutsch…' }) {
   let messages = [];   // rich: {role, content, translation, corrections, tip, vocab}
   let vocab = [];      // de-duped collected vocab [{de,en}]
   let loading = false;
@@ -53,6 +54,7 @@ export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, placeh
       const p = await tutorStructured(getSystemPrompt(), modelHistory(seed));
       messages.push({ role: 'tutor', content: p.reply, translation: p.translation, corrections: p.corrections, tip: p.tip, vocab: p.vocab });
       collectVocab();
+      if (p.grammar_signals?.length) onGrammarSignal(p.grammar_signals);
       paint();
       if (p.reply) say(p.reply);
     } catch (e) {

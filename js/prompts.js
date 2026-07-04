@@ -24,36 +24,46 @@ function weakLines(items, vocabById) {
 
 // The structured conversation format — shared by the free-practice tab and the
 // curriculum conversation phase. The tutor model returns JSON the UI renders as
-// reply + translation + inline corrections + tip + vocab chips.
-const STRUCTURED_FORMAT = `Respond ONLY with valid JSON (no markdown, no code fences) matching this exact shape:
+// reply + translation + inline corrections + tip + vocab chips, and also tags
+// which reference grammar points the learner just demonstrated or struggled
+// with so that signal can be persisted (see store.js recordGrammarSignal).
+function structuredFormat(grammarLabels = []) {
+  return `Respond ONLY with valid JSON (no markdown, no code fences) matching this exact shape:
 {
   "reply": "<your German response>",
   "translation": "<full English translation of your reply>",
   "corrections": [{ "wrong": "<what the learner wrote>", "right": "<corrected form>", "note": "<brief grammar note>" }],
   "tip": "<one short cultural or grammar insight, or empty string>",
-  "vocab": [{ "de": "<German word/phrase from your reply>", "en": "<English meaning>" }]
+  "vocab": [{ "de": "<German word/phrase from your reply>", "en": "<English meaning>" }],
+  "grammar_signals": [{ "label": "<exact label from the reference list below>", "status": "understood"|"struggled" }]
 }
 Rules:
 - reply: natural German only; always end with a question to keep the conversation flowing.
 - corrections: only real errors from the learner's last message (max 3); empty array if they were correct.
 - vocab: 1–3 useful words drawn from YOUR reply.
-- tip: only when genuinely useful, otherwise "".`;
+- tip: only when genuinely useful, otherwise "".
+- grammar_signals: tag at most 2 per turn, and only when the learner's LAST message clearly demonstrates correct or incorrect use of one of these reference labels — never tag anything not in this list, and never guess:
+${grammarLabels.length ? grammarLabels.map((g) => `  - ${g}`).join('\n') : '  (none provided — leave grammar_signals empty)'}
+  Use "understood" for correct use, "struggled" for a real error. Leave the array empty if nothing from the list was clearly shown this turn.`;
+}
 
 // Free-practice conversation (the Conversation tab). Level + topic chosen by
-// the learner; not tied to the curriculum.
-export function buildFreeConvoPrompt({ level = 'A2', topic = 'Free Conversation' } = {}) {
+// the learner; not tied to the curriculum. knownGrammar is every grammar_focus
+// label across the whole curriculum (the tab isn't progress-gated), so the
+// tutor has the same reference list to tag against as the curriculum phase.
+export function buildFreeConvoPrompt({ level = 'A2', topic = 'Free Conversation', knownGrammar = [] } = {}) {
   return `You are an immersive German conversation partner for a ${level}-level learner. Topic: "${topic}".
 Keep your German natural for ${level}: at A1/A2 use simple words and short sentences; at B2/C1 complex grammar and idioms are welcome.
 Gently correct the learner's real mistakes. Pay attention to umlaut spelling (e.g. möchte vs mochte) and the wo/woher/wohin distinction.
 
-${STRUCTURED_FORMAT}`;
+${structuredFormat(knownGrammar)}`;
 }
 
 // Curriculum conversation phase — structured, like the free tab but grounded in
 // the active unit, plus review items from previous lessons and known weak points.
-// ctx = { unit, sectionTitle, reviewItems, weakPoints, vocabById, mode }
+// ctx = { unit, sectionTitle, reviewItems, weakPoints, vocabById, mode, knownGrammar }
 export function buildUnitConvoPrompt(ctx) {
-  const { unit, sectionTitle, reviewItems = [], weakPoints = [], vocabById = {}, mode = 'curriculum' } = ctx;
+  const { unit, sectionTitle, reviewItems = [], weakPoints = [], vocabById = {}, mode = 'curriculum', knownGrammar = [] } = ctx;
   const objectives = (unit?.objectives || []).join('; ');
   const grammar = (unit?.grammar_focus || []).join('; ');
 
@@ -81,7 +91,7 @@ HOW TO TEACH:
 - Pay special attention to umlaut spelling (möchte vs mochte) and the wo/woher/wohin distinction — persistent issues.
 - Keep turns short.
 
-${STRUCTURED_FORMAT}
+${structuredFormat(knownGrammar.length ? knownGrammar : (unit?.grammar_focus || []))}
 
 Begin now with a natural greeting in German appropriate to the unit.`;
 }
@@ -112,18 +122,23 @@ Hold a real conversation, correct errors kindly inline, keep turns short, and be
 // Single-sentence practice generator (lesson phase 2). Produces ONE-sentence
 // drills mixing English→German, German→English, and respond-in-German.
 export function buildSentencePrompt(ctx) {
-  const { unit, priorWeak = [] } = ctx;
+  const { unit, priorWeak = [], knownGrammar = [], weakGrammar = [] } = ctx;
   const pool = (unit?.vocab || []).map((v) => `${v.german} — ${v.english}${v.notes ? `  (note: ${v.notes})` : ''}`);
   const priorPool = priorWeak.map((v) => `${v.german} — ${v.english}${v.notes ? `  (note: ${v.notes})` : ''}`);
-  return `You are a German single-sentence drill generator for an A1–A2 learner. Using the vocabulary below, create exactly 5 SINGLE-SENTENCE practice items. Each item is ONE sentence only — never a multi-turn conversation.
+  return `You are a German single-sentence drill generator. Using the vocabulary below, create exactly 5 SINGLE-SENTENCE practice items. Each item is ONE sentence only — never a multi-turn conversation.
 
 Mix these three types roughly evenly:
 - "en_to_de": give a short English sentence; the learner translates it into German.
 - "de_to_en": give a short German sentence; the learner translates it into English.
 - "respond_de": ask one simple question in German; the learner answers in a single German sentence.
 
-Use the lesson vocabulary wherever it fits. Keep everything at A1–A2.
-${priorPool.length ? `
+Use the lesson vocabulary wherever it fits. Only use grammar constructions from this list — nothing beyond what's listed, even if it would read more naturally:
+${knownGrammar.length ? knownGrammar.map((g) => `- ${g}`).join('\n') : '- (basic present-tense statements and questions only)'}
+If a natural sentence would require something outside this list, simplify the sentence instead of introducing it.
+${weakGrammar.length ? `
+Also, make at least one of the 5 items naturally exercise one of these shaky grammar points (without turning it into a grammar lecture — just use it correctly in context):
+${weakGrammar.map((g) => `- ${g}`).join('\n')}
+` : ''}${priorPool.length ? `
 PRIORITY REVIEW — words from EARLIER units the learner hasn't mastered yet. Spend at least ${Math.min(2, priorPool.length)} of the 5 items on these before drawing more from this lesson's vocabulary:
 ${priorPool.map((p) => `- ${p}`).join('\n')}
 ` : ''}
@@ -144,7 +159,7 @@ Respond with STRICT JSON only, no prose, no markdown fences:
 // Quiz/grader prompt. stage 'generate' produces questions; stage 'grade'
 // evaluates an answer leniently — see below.
 export function buildQuizPrompt(ctx, stage) {
-  const { unit, reviewItems = [], weakPoints = [], priorWeak = [], vocabById = {} } = ctx;
+  const { unit, reviewItems = [], weakPoints = [], priorWeak = [], vocabById = {}, knownGrammar = [], weakGrammar = [] } = ctx;
   const priorLines = priorWeak.map((v) => `${v.german} — ${v.english}`);
   const restLines = [
     ...(unit?.vocab || []).map((v) => `${v.german} — ${v.english}`),
@@ -156,6 +171,13 @@ export function buildQuizPrompt(ctx, stage) {
     return `You are a German quiz generator. Build a short mixed quiz (5–7 items) from the item pool below. Mix directions: some German→English, some English→German, at least one fill-in-the-blank sentence, and at least one that targets a known weak point.
 ${priorLines.length ? `
 PRIORITY: allocate AT LEAST half of this quiz's questions to the "PRIORITY REVIEW" pool below — words from EARLIER units the learner hasn't mastered yet — before drawing from the rest of the pool. The goal is closing the gap on older units, not just drilling the current one.
+` : ''}
+Every question's carrier sentence must only use grammar constructions from this list — nothing beyond what's listed, even if it would read more naturally:
+${knownGrammar.length ? knownGrammar.map((g) => `- ${g}`).join('\n') : '- (basic present-tense statements and questions only)'}
+If a natural sentence would require something outside this list, simplify the sentence instead of introducing it.
+${weakGrammar.length ? `
+Also, make at least one question naturally exercise one of these shaky grammar points (without turning it into a grammar lecture — just use it correctly in context):
+${weakGrammar.map((g) => `- ${g}`).join('\n')}
 ` : ''}
 Every question is fully independent: its "answer" must be the direct, faithful
 solution to that SAME question's "prompt" only — never borrow wording or content
@@ -182,6 +204,16 @@ so the learner can't tell the blank needs it too; right: prompt "Ich ____ Berlin
 answer "komme aus"). Before finalizing each fill_blank question, check that replacing
 "____" in "prompt" with "answer" reproduces the exact original sentence with no leftover
 or duplicated words.
+
+The rest of the sentence must also make the blank's answer inferable on its own:
+include a collocation, complement, or marker that fits only the targeted pool item,
+not several different vocabulary answers equally well. Before finalizing, ask: could a
+DIFFERENT word from the item pool also complete this sentence grammatically? If yes,
+add or change context (an object, preposition, time marker) until only the intended
+item fits. For example, for the pool item "kommen aus — to come from": "Ich ____
+Berlin." is AMBIGUOUS (komme aus / wohne in / besuche / mag / kenne could all fit) —
+instead write something like "Meine Familie ____ Berlin, aber wir leben jetzt in
+München." which only "komme/kommt aus" satisfies, because of "aber wir leben jetzt in".
 
 ${priorLines.length ? `PRIORITY REVIEW (earlier units, not yet mastered):
 ${priorLines.map((p) => `- ${p}`).join('\n')}

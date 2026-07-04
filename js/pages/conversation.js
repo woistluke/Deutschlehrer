@@ -4,6 +4,7 @@
 // flashcards from collected vocab, missed-card tracking, and a session review.
 import { createRichChat, escapeHtml } from '../chatui.js';
 import { buildFreeConvoPrompt } from '../prompts.js';
+import * as store from '../store.js';
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1'];
 const TOPICS = ['Greetings & Small Talk', 'Ordering Food', 'Shopping', 'Travel & Directions',
@@ -19,7 +20,7 @@ function savePrefs(p) { localStorage.setItem(LS_PREFS, JSON.stringify(p)); }
 function loadMissed() { try { return JSON.parse(localStorage.getItem(LS_MISSED)) || []; } catch { return []; } }
 function saveMissed(m) { localStorage.setItem(LS_MISSED, JSON.stringify(m)); }
 
-export function mountConversation(el) {
+export function mountConversation(el, ctx) {
   const prefs = loadPrefs();
   const view = {
     screen: 'setup',                       // setup | chat | flashcards | review
@@ -31,6 +32,13 @@ export function mountConversation(el) {
     started: false,
   };
   let chat = null;
+  let knownGrammar = [];
+  // Every grammar_focus label across the whole curriculum, deduped — the free
+  // tab isn't progress-gated, so the tutor gets the full reference list to tag
+  // demonstrated/struggled grammar against.
+  store.getCurriculum(ctx.userId).then((sections) => {
+    knownGrammar = [...new Set(sections.flatMap((s) => s.units).flatMap((u) => u.grammar_focus || []))];
+  });
 
   function rerender() {
     if (view.screen === 'setup') renderSetup();
@@ -96,12 +104,13 @@ export function mountConversation(el) {
     if (om) om.onclick = () => startFlashcards(view.missed);
 
     chat = createRichChat(el.querySelector('#rich'), {
-      getSystemPrompt: () => buildFreeConvoPrompt({ level: view.level, topic: view.topic }),
+      getSystemPrompt: () => buildFreeConvoPrompt({ level: view.level, topic: view.topic, knownGrammar }),
       onVocab: (list) => {
         view.vocab = list;
         const c = el.querySelector('#cards-count');
         if (c) c.textContent = list.length;
       },
+      onGrammarSignal: (signals) => signals.forEach((s) => store.recordGrammarSignal(ctx.userId, s.label, s.status === 'understood')),
     });
     // Open only once per topic session; re-rendering chat re-opens intentionally
     // when the user changes topic and starts again.

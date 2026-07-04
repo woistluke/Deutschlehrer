@@ -161,12 +161,14 @@ async function buildContext(unit, section, mode) {
   const sections = await store.getCurriculum(CTX.userId);
   const vocabById = buildVocabMap(sections);
   const unitsById = buildUnitsMap(sections);
-  const [reviewItems, weakPoints, priorWeak] = await Promise.all([
+  const [reviewItems, weakPoints, priorWeak, knownGrammar, weakGrammar] = await Promise.all([
     store.getDueReviewItems(CTX.userId),
     store.getWeakPoints(CTX.userId),
     mode === 'curriculum' ? store.getUnmasteredFromPriorUnits(CTX.userId, unit.unit_id) : Promise.resolve([]),
+    store.getGrammarLearnedSoFar(CTX.userId, unit.unit_id),
+    store.getWeakGrammar(CTX.userId),
   ]);
-  return { unit, section, sectionTitle: section?.title, reviewItems, weakPoints, priorWeak, vocabById, unitsById, mode };
+  return { unit, section, sectionTitle: section?.title, reviewItems, weakPoints, priorWeak, vocabById, unitsById, mode, knownGrammar, weakGrammar };
 }
 
 async function startSession(unit, section, mode) {
@@ -190,8 +192,12 @@ async function startDueReview(sections) {
   if (!due.length) { alert('Nothing due right now — nicely done.'); return; }
   const vocabById = buildVocabMap(sections);
   const unitsById = buildUnitsMap(sections);
+  const [knownGrammar, weakGrammar] = await Promise.all([
+    store.getGrammarLearnedSoFar(CTX.userId, null),
+    store.getWeakGrammar(CTX.userId),
+  ]);
   const pseudoUnit = { title: 'Due review', objectives: ['refresh items due for review'], grammar_focus: [], vocab: due.map((p) => vocabById[p.item_id]).filter(Boolean) };
-  sessionCtx = { unit: pseudoUnit, section: null, sectionTitle: 'Review', reviewItems: due, weakPoints: [], priorWeak: [], vocabById, unitsById, mode: 'review' };
+  sessionCtx = { unit: pseudoUnit, section: null, sectionTitle: 'Review', reviewItems: due, weakPoints: [], priorWeak: [], vocabById, unitsById, mode: 'review', knownGrammar, weakGrammar };
   session = await store.createSession(CTX.userId, { mode: 'review', unit_id: null });
   phaseIdx = 0;
   renderSession();
@@ -371,6 +377,7 @@ function mountConvoPhase() {
   `;
   convo = createRichChat(zone.querySelector('#convo-rich'), {
     getSystemPrompt: () => buildUnitConvoPrompt(sessionCtx),
+    onGrammarSignal: (signals) => signals.forEach((s) => store.recordGrammarSignal(CTX.userId, s.label, s.status === 'understood')),
     placeholder: 'Type in German…',
   });
   convo.open('Begin the conversation now with a natural German greeting tied to this unit.');
