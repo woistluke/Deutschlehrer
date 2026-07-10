@@ -119,7 +119,7 @@ async function renderLanding() {
 
     <div class="card">
       <h2>Review mode</h2>
-      <p class="muted" style="margin-top:0">Run any unit through the full four-phase flow, regardless of schedule.</p>
+      <p class="muted" style="margin-top:0">Run any unit through the full four-phase flow, regardless of schedule. Unlike a regular lesson, this pulls the unit's <b>entire</b> vocabulary into the matching phase (not the ~${SESSION_SIZE}-word slice) — a bigger unit can take a fair bit longer than ~5 minutes.</p>
       <div class="row wrap">
         <select id="review-pick" style="flex:1;min-width:220px">
           <option value="">Choose a unit to review…</option>
@@ -340,21 +340,35 @@ async function mountSentencePhase() {
       </div>
     `;
     const ans = zone.querySelector('#sent-ans');
+    const checkBtn = zone.querySelector('#sent-check');
     ans.focus();
     const check = () => gradeSentence(it, ans.value.trim());
-    zone.querySelector('#sent-check').onclick = check;
+    checkBtn.onclick = check;
     ans.addEventListener('keydown', (e) => { if (e.key === 'Enter') check(); });
   }
 
+  // Guarded against double-submit: a double-click, or Enter followed by a
+  // click, could otherwise fire two grading calls for the same sentence
+  // before the first resolves, each independently updating SRS progress
+  // (double-counting times_seen and potentially double-advancing/dropping
+  // the SRS ladder for one answer).
   async function gradeSentence(it, answer) {
     if (!answer) return;
+    const checkBtn = zone.querySelector('#sent-check');
+    const ansEl = zone.querySelector('#sent-ans');
+    if (checkBtn.disabled) return;
+    checkBtn.disabled = true; ansEl.disabled = true;
     const vEl = zone.querySelector('#sent-verdict');
     vEl.innerHTML = `<p class="muted">Checking…</p>`;
     let verdict;
     try {
       verdict = await quizCall(buildQuizPrompt(sessionCtx, 'grade'),
         `Type: ${it.type}\nPrompt: ${it.prompt}\nIntended answer: ${it.answer}\nLearner's answer: ${answer}`);
-    } catch (e) { vEl.innerHTML = `<p class="verdict wrong">${esc(e.message)}</p>`; return; }
+    } catch (e) {
+      vEl.innerHTML = `<p class="verdict wrong">${esc(e.message)}</p>`;
+      checkBtn.disabled = false; ansEl.disabled = false;
+      return;
+    }
     zone.querySelector('.qcard').classList.add(verdict.correct ? 'correct' : 'wrong');
     vEl.innerHTML = verdictHtml(verdict, it.answer) +
       `<button class="btn sm" id="sent-next" style="margin-top:8px">${idx + 1 < items.length ? 'Next sentence' : 'Finish phase'}</button>`;
@@ -423,16 +437,26 @@ function renderQuestion() {
   ans.addEventListener('keydown', (e) => { if (e.key === 'Enter') check(); });
 }
 
+// Guarded against double-submit — see gradeSentence's comment above for why
+// (a duplicate in-flight grading call double-counts SRS progress).
 async function gradeAnswer(q, answer) {
   if (!answer) return;
   const zone = ROOT.querySelector('#phase-zone');
   const vEl = zone.querySelector('#verdict');
+  const btn = zone.querySelector('#submit-ans');
+  const ansEl = zone.querySelector('#ans');
+  if (btn.disabled) return;
+  btn.disabled = true; ansEl.disabled = true;
   vEl.innerHTML = `<p class="muted">Grading…</p>`;
   let verdict;
   try {
     verdict = await quizCall(buildQuizPrompt(sessionCtx, 'grade'),
       `Type: ${q.type}\nQuestion: ${q.prompt}\nIntended answer: ${q.answer}\nLearner's answer: ${answer}`);
-  } catch (e) { vEl.innerHTML = `<p class="verdict wrong">${esc(e.message)}</p>`; return; }
+  } catch (e) {
+    vEl.innerHTML = `<p class="verdict wrong">${esc(e.message)}</p>`;
+    btn.disabled = false; ansEl.disabled = false;
+    return;
+  }
 
   zone.querySelector('.qcard').classList.add(verdict.correct ? 'correct' : 'wrong');
   vEl.innerHTML = verdictHtml(verdict, q.answer) +

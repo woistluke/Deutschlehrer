@@ -73,6 +73,16 @@ export function mountSettings(el, ctx) {
       </div>
       <pre id="set-sync-report" class="muted" style="margin-top:10px;white-space:pre-wrap"></pre>
     </div>
+
+    <div class="card">
+      <h2>Admin — split combined vocab</h2>
+      <p class="muted" style="margin-top:0">A one-time cleanup: some seed vocab used to combine multiple words into a single line (e.g. "eins, zwei, drei" or "heute / morgen / gestern"). Those are now separate entries in <code>seed.js</code> — this migrates any matching rows already in an account to the same split, carrying review history forward (seen/correct counts divided evenly across the new rows; mastery/schedule copied to each) rather than resetting it. Safe to re-run — already-split accounts have nothing left to match.</p>
+      <div class="row wrap" style="gap:8px">
+        <button class="btn primary" id="set-split-user">Split combined vocab (this handle)</button>
+        <button class="btn danger" id="set-split-all">Split for ALL users</button>
+      </div>
+      <pre id="set-split-report" class="muted" style="margin-top:10px;white-space:pre-wrap"></pre>
+    </div>
   `;
 
   el.querySelector('#set-user-save').onclick = async () => {
@@ -121,6 +131,35 @@ export function mountSettings(el, ctx) {
       const results = await store.syncCurriculumToSeedForAllUsers({ refreshMetadata });
       out.textContent = results.map((r) =>
         `${r.userId}: +${r.sectionsAdded} sections, +${r.unitsAdded} units, +${r.vocabAdded} vocab`).join('\n');
+    } catch (e) {
+      out.textContent = 'Error: ' + e.message;
+    } finally { btn.disabled = false; }
+  };
+
+  el.querySelector('#set-split-user').onclick = async () => {
+    const btn = el.querySelector('#set-split-user');
+    const out = el.querySelector('#set-split-report');
+    btn.disabled = true; out.textContent = `Splitting for ${ctx.userId}…`;
+    try {
+      const r = await store.splitCombinedVocab(ctx.userId);
+      out.textContent = r.rowsSplit
+        ? `${ctx.userId}: split ${r.rowsSplit} combined row(s) into ${r.rowsCreated} individual entries.`
+        : `${ctx.userId}: nothing to split — already up to date.`;
+    } catch (e) {
+      out.textContent = 'Error: ' + e.message;
+    } finally { btn.disabled = false; }
+  };
+
+  el.querySelector('#set-split-all').onclick = async () => {
+    if (!confirm('Split combined vocab entries for EVERY user account? This carries each row\'s review history forward to the new split entries and removes the old combined row. Proceed?')) return;
+    const btn = el.querySelector('#set-split-all');
+    const out = el.querySelector('#set-split-report');
+    btn.disabled = true; out.textContent = 'Splitting for all users…';
+    try {
+      const results = await store.splitCombinedVocabForAllUsers();
+      out.textContent = results.map((r) =>
+        r.rowsSplit ? `${r.userId}: split ${r.rowsSplit} row(s) into ${r.rowsCreated} entries.` : `${r.userId}: nothing to split.`
+      ).join('\n');
     } catch (e) {
       out.textContent = 'Error: ' + e.message;
     } finally { btn.disabled = false; }

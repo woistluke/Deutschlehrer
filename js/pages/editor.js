@@ -137,12 +137,22 @@ function vocabRow(v) {
 function wireUnitEditor(d, u, sec, ui) {
   const f = (name) => d.querySelector(`[data-f="${name}"]`);
   d.querySelector('[data-act="save-unit"]').onclick = async () => {
+    // mastery_threshold is compared directly against mastery_score, which
+    // maxes out at 1.0 (see srs.js) — the <input min/max are only browser
+    // hints, not enforcement, so a stray typo (e.g. "8" instead of "0.8")
+    // would otherwise save verbatim and make this unit's completion
+    // permanently unreachable with no indication why. Clamp instead.
+    const rawThreshold = parseFloat(f('threshold').value);
+    const threshold = Number.isFinite(rawThreshold) ? Math.min(1, Math.max(0, rawThreshold)) : 0.8;
+    if (!Number.isFinite(rawThreshold) || rawThreshold < 0 || rawThreshold > 1) {
+      alert(`Mastery threshold must be between 0 and 1. Using ${threshold} instead of "${f('threshold').value}".`);
+    }
     await store.updateUnit(u.unit_id, {
       title: f('title').value.trim(),
       source: f('source').value.trim() || null,
       objectives: splitList(f('objectives').value),
       grammar_focus: splitList(f('grammar').value),
-      mastery_threshold: parseFloat(f('threshold').value),
+      mastery_threshold: threshold,
       status: f('status').value,
     });
     render();

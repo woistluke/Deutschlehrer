@@ -313,12 +313,130 @@ export async function syncCurriculumToSeedForAllUsers(opts = {}) {
   return results;
 }
 
-// The active unit = first non-complete unit in course order.
+// One-time-ish data migration: a batch of seed vocab items used to combine
+// multiple standalone words/forms into a single line (e.g. "eins, zwei, drei"
+// or "heute / morgen / gestern") — seed.js now lists each as its own vocab
+// row instead. This maps each old combined German string to the individual
+// entries it should become, so existing accounts (seeded before the split)
+// can be migrated in place rather than only affecting brand-new curricula.
+const VOCAB_SPLITS = [
+  { oldGerman: 'eins, zwei, drei', newEntries: [{ german: 'eins', english: 'one', notes: null }, { german: 'zwei', english: 'two', notes: null }, { german: 'drei', english: 'three', notes: null }] },
+  { oldGerman: 'heute / morgen / gestern', newEntries: [{ german: 'heute', english: 'today', notes: null }, { german: 'morgen', english: 'tomorrow', notes: null }, { german: 'gestern', english: 'yesterday', notes: null }] },
+  { oldGerman: 'mein / meine', newEntries: [{ german: 'mein', english: 'my (masc./neut.)', notes: null }, { german: 'meine', english: 'my (fem./pl.)', notes: null }] },
+  { oldGerman: 'das ist mein Mann/Frau', newEntries: [{ german: 'Das ist mein Mann', english: 'that\'s my husband', notes: null }, { german: 'Das ist meine Frau', english: 'that\'s my wife', notes: null }] },
+  { oldGerman: 'die Mutter / der Vater', newEntries: [{ german: 'die Mutter', english: 'mother', notes: null }, { german: 'der Vater', english: 'father', notes: null }] },
+  { oldGerman: 'das Kind, die Kinder', newEntries: [{ german: 'das Kind', english: 'child', notes: null }, { german: 'die Kinder', english: 'children', notes: null }] },
+  { oldGerman: 'Ich habe einen Sohn / eine Tochter', newEntries: [{ german: 'Ich habe einen Sohn', english: 'I have a son', notes: 'talking about children' }, { german: 'Ich habe eine Tochter', english: 'I have a daughter', notes: 'talking about children' }] },
+  { oldGerman: 'Das ist mein Bruder / meine Schwester', newEntries: [{ german: 'Das ist mein Bruder', english: 'This is my brother', notes: 'introducing siblings' }, { german: 'Das ist meine Schwester', english: 'This is my sister', notes: 'introducing siblings' }] },
+  { oldGerman: 'bar / mit Karte zahlen', newEntries: [{ german: 'bar zahlen', english: 'to pay cash', notes: null }, { german: 'mit Karte zahlen', english: 'to pay by card', notes: null }] },
+  { oldGerman: 'links / rechts / geradeaus', newEntries: [{ german: 'links', english: 'left', notes: null }, { german: 'rechts', english: 'right', notes: null }, { german: 'geradeaus', english: 'straight ahead', notes: null }] },
+  { oldGerman: 'es regnet / es schneit', newEntries: [{ german: 'es regnet', english: 'it\'s raining', notes: null }, { german: 'es schneit', english: 'it\'s snowing', notes: null }] },
+  { oldGerman: 'der Sommer / der Winter', newEntries: [{ german: 'der Sommer', english: 'summer', notes: null }, { german: 'der Winter', english: 'winter', notes: null }] },
+  { oldGerman: 'warm / kalt', newEntries: [{ german: 'warm', english: 'warm', notes: null }, { german: 'kalt', english: 'cold', notes: null }] },
+  { oldGerman: 'zuerst / dann / danach', newEntries: [{ german: 'zuerst', english: 'first', notes: null }, { german: 'dann', english: 'then', notes: null }, { german: 'danach', english: 'afterward', notes: null }] },
+  { oldGerman: 'langweilig / spannend', newEntries: [{ german: 'langweilig', english: 'boring', notes: null }, { german: 'spannend', english: 'exciting', notes: null }] },
+  { oldGerman: 'joggen / schwimmen / wandern', newEntries: [{ german: 'joggen', english: 'to jog', notes: null }, { german: 'schwimmen', english: 'to swim', notes: null }, { german: 'wandern', english: 'to hike', notes: null }] },
+  { oldGerman: 'der Kollege / die Kollegin', newEntries: [{ german: 'der Kollege', english: 'colleague (male)', notes: null }, { german: 'die Kollegin', english: 'colleague (female)', notes: null }] },
+  { oldGerman: 'deshalb / deswegen', newEntries: [{ german: 'deshalb', english: 'therefore, that\'s why', notes: 'Triggers normal verb-second order, unlike weil.' }, { german: 'deswegen', english: 'therefore, that\'s why', notes: 'Triggers normal verb-second order, unlike weil.' }] },
+  { oldGerman: 'ich war / ich hatte', newEntries: [{ german: 'ich war', english: 'I was', notes: null }, { german: 'ich hatte', english: 'I had', notes: null }] },
+  { oldGerman: 'konnte / musste / wollte', newEntries: [{ german: 'konnte', english: 'could', notes: 'Präteritum of modal verbs.' }, { german: 'musste', english: 'had to', notes: 'Präteritum of modal verbs.' }, { german: 'wollte', english: 'wanted to', notes: 'Präteritum of modal verbs.' }] },
+  { oldGerman: 'mit dem/der…', newEntries: [{ german: 'mit dem…', english: 'with whom/which (masc./neut. dative)', notes: 'Dative relative pronoun.' }, { german: 'mit der…', english: 'with whom/which (fem. dative)', notes: 'Dative relative pronoun.' }] },
+  { oldGerman: 'dessen / deren', newEntries: [{ german: 'dessen', english: 'whose (masc./neut. genitive)', notes: 'Genitive relative pronoun.' }, { german: 'deren', english: 'whose (fem./pl. genitive)', notes: 'Genitive relative pronoun.' }] },
+  { oldGerman: 'innerhalb / außerhalb', newEntries: [{ german: 'innerhalb', english: 'within', notes: '+ genitive' }, { german: 'außerhalb', english: 'outside', notes: '+ genitive' }] },
+  { oldGerman: 'von / durch', newEntries: [{ german: 'von', english: 'by', notes: 'Marks the agent in passive constructions.' }, { german: 'durch', english: 'by', notes: 'Marks the agent in passive constructions.' }] },
+];
+
+// Split one user's matching combined-vocab rows into their individual entries,
+// carrying progress forward instead of resetting it to zero. For each old row
+// found (matched by trimmed/case-insensitive German text):
+//   - times_seen / times_correct are divided evenly across the new rows (with
+//     any remainder handed to the first ones) so the aggregate review count
+//     doesn't multiply just because a word got split into pieces;
+//   - srs_level / mastery_score / next_due / last_seen / known_errors are
+//     copied as-is to every new row, since they describe learned-ness rather
+//     than a count, and there's no way to know per-sub-word history;
+//   - the old vocab row (and its now-superseded progress row) is deleted via
+//     deleteVocab, which already cleans up progress on both backends.
+// Safe to re-run: once a row is split, its old combined German text no longer
+// exists to match against, so a second run finds nothing left to do.
+export async function splitCombinedVocab(userId) {
+  const sections = await getCurriculum(userId);
+  const report = { rowsSplit: 0, rowsCreated: 0 };
+
+  for (const sec of sections) {
+    for (const unit of sec.units) {
+      for (const v of (unit.vocab || [])) {
+        const rule = VOCAB_SPLITS.find((r) => norm(r.oldGerman) === norm(v.german));
+        if (!rule) continue;
+
+        const oldProgress = await getProgress(userId, v.vocab_id);
+        const n = rule.newEntries.length;
+
+        let baseSeen = 0, accuracy = 0;
+        if (oldProgress) {
+          baseSeen = Math.floor((oldProgress.times_seen || 0) / n);
+          accuracy = (oldProgress.times_seen || 0) > 0
+            ? (oldProgress.times_correct || 0) / oldProgress.times_seen
+            : 0;
+        }
+        const remainder = oldProgress ? (oldProgress.times_seen || 0) % n : 0;
+
+        for (let i = 0; i < n; i++) {
+          const entry = rule.newEntries[i];
+          const created = await createVocab(userId, {
+            unit_id: unit.unit_id, german: entry.german, english: entry.english, notes: entry.notes || null,
+          });
+          report.rowsCreated++;
+          if (oldProgress) {
+            const timesSeen = baseSeen + (i < remainder ? 1 : 0);
+            const timesCorrect = Math.min(timesSeen, Math.round(timesSeen * accuracy));
+            await upsertProgress(userId, created.vocab_id, {
+              item_type: 'vocab', unit_id: unit.unit_id,
+              times_seen: timesSeen, times_correct: timesCorrect,
+              srs_level: oldProgress.srs_level || 0,
+              mastery_score: oldProgress.mastery_score || 0,
+              last_seen: oldProgress.last_seen || null,
+              next_due: oldProgress.next_due || null,
+              known_errors: oldProgress.known_errors || [],
+            });
+          }
+        }
+
+        await deleteVocab(v.vocab_id); // also removes the old progress row
+        report.rowsSplit++;
+      }
+    }
+  }
+  return report;
+}
+
+export async function splitCombinedVocabForAllUsers() {
+  const users = await listUsers();
+  const results = [];
+  for (const u of users) {
+    const report = await splitCombinedVocab(u.user_id);
+    results.push({ userId: u.user_id, ...report });
+  }
+  return results;
+}
+
+// The active unit = first non-complete unit in course order. A unit with no
+// vocab yet (e.g. a title-only stub just added in the Curriculum editor) has
+// nothing to master, so maybePromote's mastery check can never clear it —
+// left alone, that would permanently softlock every unit after it, since
+// this always returns the FIRST non-complete unit. Auto-complete such units
+// on the way past instead of returning them as "active."
 export async function getActiveUnit(userId) {
   const sections = await getCurriculum(userId);
   for (const s of sections) {
     for (const u of s.units) {
-      if (u.status !== 'complete') return { section: s, unit: u };
+      if (u.status === 'complete') continue;
+      const vocabCount = (u.vocab || []).filter((v) => v.german && v.english).length;
+      if (vocabCount === 0) {
+        await updateUnit(u.unit_id, { status: 'complete' });
+        continue;
+      }
+      return { section: s, unit: u };
     }
   }
   return null;
