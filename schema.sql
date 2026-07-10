@@ -54,6 +54,12 @@ create table if not exists vocab (
 );
 
 -- progress: one row per trackable item (vocab item or named grammar point).
+-- item_id is deliberately free text, not a FK to vocab(vocab_id) — it also
+-- holds "grammar:<unit_id>:<name>" pseudo-ids that don't correspond to any
+-- vocab row, so it can't be a real foreign key. That means deleting a vocab
+-- row does NOT cascade here at the DB level; the app (js/store.js
+-- deleteVocab/deleteUnit) cleans up matching progress rows itself instead.
+-- unit_id, below, IS a real FK and does cascade on unit delete.
 create table if not exists progress (
   progress_id uuid primary key default gen_random_uuid(),
   user_id     text not null references app_users(user_id) on delete cascade,

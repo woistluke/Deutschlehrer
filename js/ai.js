@@ -8,11 +8,32 @@ function getSettings() {
   catch { return {}; }
 }
 
+// Every provider call goes through this so a hung request (bad network, a
+// stalled model, etc.) can't leave the UI stuck on "Denke nach…" / "Checking…"
+// forever with no way to recover short of a full reload. On timeout the
+// caller sees a plain, retryable Error rather than a fetch abort exception.
+const REQUEST_TIMEOUT_MS = 25000;
+
+async function fetchWithTimeout(url, options, timeoutMs = REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s — check your connection and try again.`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function chatCompletion({ base, key, model, temperature, messages, jsonMode }) {
   if (!key) throw new Error('Missing API key. Add it in Settings.');
   const body = { model, temperature, messages };
   if (jsonMode) body.response_format = { type: 'json_object' };
-  const res = await fetch(`${base}/chat/completions`, {
+  const res = await fetchWithTimeout(`${base}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
     body: JSON.stringify(body),
@@ -99,7 +120,7 @@ function safeJson(text) {
 export async function speak(germanText) {
   const s = getSettings();
   if (!s.openaiKey) throw new Error('Missing OpenAI key. Add it in Settings.');
-  const res = await fetch(`${s.openaiBase || DEFAULTS.openaiBase}/audio/speech`, {
+  const res = await fetchWithTimeout(`${s.openaiBase || DEFAULTS.openaiBase}/audio/speech`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.openaiKey}` },
     body: JSON.stringify({
@@ -120,7 +141,7 @@ export async function transcribe(blob) {
   form.append('file', blob, 'speech.webm');
   form.append('model', s.transcribeModel || DEFAULTS.transcribeModel);
   form.append('language', 'de');
-  const res = await fetch(`${s.openaiBase || DEFAULTS.openaiBase}/audio/transcriptions`, {
+  const res = await fetchWithTimeout(`${s.openaiBase || DEFAULTS.openaiBase}/audio/transcriptions`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${s.openaiKey}` },
     body: form,

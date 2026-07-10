@@ -13,8 +13,12 @@ export function escapeHtml(s) {
 //   onVocab         : (vocabList) => void   notified when collected vocab changes
 //   placeholder     : input placeholder
 // Returns { open, getVocab, getHistory }.
-export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, placeholder = 'Schreib auf Deutsch…' }) {
-  let messages = [];   // rich: {role, content, translation, corrections, tip, vocab}
+// initialMessages: restore a previously-collected conversation (e.g. when the
+// UI needs to tear down and recreate the DOM node — such as leaving/returning
+// from the flashcards screen — without losing the chat so far or re-sending
+// an opening greeting).
+export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, placeholder = 'Schreib auf Deutsch…', initialMessages = null }) {
+  let messages = initialMessages ? initialMessages.slice() : [];   // rich: {role, content, translation, corrections, tip, vocab}
   let vocab = [];      // de-duped collected vocab [{de,en}]
   let loading = false;
   let recorder = null, chunks = [];
@@ -106,8 +110,14 @@ export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, placeh
     chatEl.scrollTop = chatEl.scrollHeight;
   }
 
+  // If we're restoring a prior conversation, render it immediately and seed
+  // `vocab` from it so future turns dedupe correctly against what's already
+  // been collected — no network call, no fresh greeting.
+  if (messages.length) { collectVocab(); paint(); }
+
   return {
     open: (seed) => turn(seed || 'Start the conversation with a natural German greeting or opening question.'),
+    hasHistory: () => messages.length > 0,
     getVocab: () => vocab,
     getHistory: () => messages,
   };

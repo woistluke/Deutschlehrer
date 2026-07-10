@@ -31,6 +31,11 @@ export function mountConversation(el) {
     started: false,
   };
   let chat = null;
+  // Snapshot of the chat's message history captured whenever we leave the
+  // chat screen for flashcards/review, so returning to chat resumes the same
+  // conversation instead of starting a brand-new one (and re-sending an
+  // opening greeting). Only a genuine "change topic" / fresh start clears it.
+  let savedHistory = null;
 
   function rerender() {
     if (view.screen === 'setup') renderSetup();
@@ -68,6 +73,7 @@ export function mountConversation(el) {
   }
 
   function startChat() {
+    savedHistory = null; // starting fresh from setup — new topic, new conversation
     view.screen = 'chat';
     renderChat();
   }
@@ -90,22 +96,29 @@ export function mountConversation(el) {
         <div id="rich"></div>
       </div>
     `;
-    el.querySelector('#back-setup').onclick = () => { view.screen = 'setup'; renderSetup(); };
-    el.querySelector('#open-cards').onclick = () => startFlashcards(view.vocab);
+    // "Change topic" is the one path that should genuinely restart the
+    // conversation — clear any saved history so the new chat instance opens fresh.
+    el.querySelector('#back-setup').onclick = () => { savedHistory = null; view.screen = 'setup'; renderSetup(); };
+    el.querySelector('#open-cards').onclick = () => { savedHistory = chat.getHistory(); startFlashcards(view.vocab); };
     const om = el.querySelector('#open-missed');
-    if (om) om.onclick = () => startFlashcards(view.missed);
+    if (om) om.onclick = () => { savedHistory = chat.getHistory(); startFlashcards(view.missed); };
 
+    const resuming = !!(savedHistory && savedHistory.length);
     chat = createRichChat(el.querySelector('#rich'), {
       getSystemPrompt: () => buildFreeConvoPrompt({ level: view.level, topic: view.topic }),
+      initialMessages: savedHistory,
       onVocab: (list) => {
         view.vocab = list;
         const c = el.querySelector('#cards-count');
         if (c) c.textContent = list.length;
       },
     });
-    // Open only once per topic session; re-rendering chat re-opens intentionally
-    // when the user changes topic and starts again.
-    chat.open(`Start the conversation with a natural German greeting or opening question about "${view.topic}".`);
+    savedHistory = null; // consumed — the new instance now owns this history
+    // Only open with a fresh greeting for a genuinely new conversation. Returning
+    // from flashcards/review restores the prior messages instead (see above).
+    if (!resuming) {
+      chat.open(`Start the conversation with a natural German greeting or opening question about "${view.topic}".`);
+    }
     view.started = true;
   }
 

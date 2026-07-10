@@ -96,11 +96,38 @@ export async function ensureUser(userId, displayName) {
 
 export async function listUsers() { return selectWhere('app_users', {}); }
 
+// Remove progress rows matching arbitrary fields. On Supabase, deleting a
+// unit already cascades to its progress rows via the unit_id FK, and vocab
+// deletion has no FK to cascade from at all (progress.item_id is free text,
+// since an item can also be a "grammar:..." pseudo-id) — and the localStorage
+// fallback has no FK cascades of any kind. So every delete path below cleans
+// up its own progress rows explicitly, on both backends, rather than leaving
+// them to accumulate as dead data.
+async function removeProgressWhere(match) {
+  if (remote) {
+    let q = client.from('progress').delete();
+    for (const [k, v] of Object.entries(match)) q = q.eq(k, v);
+    const { error } = await q;
+    if (error) throw error;
+    return;
+  }
+  const all = localAll();
+  const rows = tbl(all, 'progress');
+  all.progress = rows.filter((r) => !Object.entries(match).every(([k, v]) => r[k] === v));
+  localSave(all);
+}
+
 // ---- sections -------------------------------------------------------------
 export const createSection = (userId, fields) =>
   insert('sections', { user_id: userId, title: fields.title, position: fields.position ?? 0, notes: fields.notes || null });
 export const updateSection = (id, patch) => update('sections', 'section_id', id, patch);
-export const deleteSection = (id) => remove('sections', 'section_id', id);
+export async function deleteSection(id) {
+  // Cascade to every unit in the section (which itself cascades to that
+  // unit's vocab + progress — see deleteUnit) so nothing is orphaned locally.
+  const units = await selectWhere('units', { section_id: id });
+  await remove('sections', 'section_id', id);
+  await Promise.all(units.map((u) => deleteUnit(u.unit_id)));
+}
 
 // ---- units ----------------------------------------------------------------
 export const createUnit = (userId, fields) =>
@@ -111,7 +138,12 @@ export const createUnit = (userId, fields) =>
     mastery_threshold: fields.mastery_threshold ?? 0.8, status: fields.status || 'locked',
   });
 export const updateUnit = (id, patch) => update('units', 'unit_id', id, patch);
-export const deleteUnit = (id) => remove('units', 'unit_id', id);
+export async function deleteUnit(id) {
+  const vocabRows = await selectWhere('vocab', { unit_id: id });
+  await remove('units', 'unit_id', id);
+  await Promise.all(vocabRows.map((v) => remove('vocab', 'vocab_id', v.vocab_id)));
+  await removeProgressWhere({ unit_id: id });
+}
 
 // ---- vocab ----------------------------------------------------------------
 export const createVocab = (userId, fields) =>
@@ -120,7 +152,10 @@ export const createVocab = (userId, fields) =>
     english: fields.english, notes: fields.notes || null, tags: fields.tags || [],
   });
 export const updateVocab = (id, patch) => update('vocab', 'vocab_id', id, patch);
-export const deleteVocab = (id) => remove('vocab', 'vocab_id', id);
+export async function deleteVocab(id) {
+  await remove('vocab', 'vocab_id', id);
+  await removeProgressWhere({ item_id: id });
+}
 
 // ---- progress -------------------------------------------------------------
 export async function getProgress(userId, itemId) {

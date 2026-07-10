@@ -52,16 +52,11 @@ The first time a handle loads against an empty database, the app seeds the propo
 ### Lesson flow (runner)
 Start a unit → **① Vocabulary**: match the lesson's German ↔ English pairs → **② Sentences**: a handful of single-sentence drills, each graded leniently with the intended answer shown → **③ Conversation**: the tutor opens in German, weaving the just-drilled vocab together with due-review items and weak points → **④ Quiz**: the grader scores each answer and updates that item's SRS record. When every item in a unit clears its mastery threshold, the unit is marked complete and the next one unlocks. Review mode runs any unit (or everything currently due) through the same four phases, regardless of schedule.
 
-## Integrating with your existing repo
+## History
 
-**This `v1.2` folder is the Path A result** — the modular app is now the home, with the original single-file app's conversation richness (structured corrections/translation/tips/vocab chips, flashcards, missed-card review, TTS, mic) ported into `pages/conversation.js` + the shared `chatui.js`. The standalone `index.html` at the repo root is preserved as-is.
+This app began as a single-file prototype, then was rebuilt into the modular, multi-page app described above (the "Path A" rework: the curriculum engine, plus the original conversation richness — structured corrections/translation/tips/vocab chips, flashcards, missed-card review, TTS, mic — ported into `pages/conversation.js` + `chatui.js`). That rework is complete: this repo's root already **is** the app, and there is no separate legacy file or folder left to merge in.
 
-To make it your new home: commit the whole `v1.2` folder (not just `index.html`) — it's multi-file, so the page would 404 on `js/` and `css/` and render blank if you copied that one file alone.
-
-Still worth doing when you pick this up:
-
-- **Reconcile key storage.** This app reads settings from `localStorage['aufdeutsch.settings']`; your original single file uses individual keys like `groq_key` / `openai_key` / `groq_model` / `transcribe_model`. Add a one-time migration in `app.js`/`config.js` that reads those legacy keys when the new settings object is empty, so you don't have to re-enter anything.
-- **Voice options.** The original had a browser-voice picker + rate + auto-speak. v1.2 uses OpenAI TTS (`ttsVoice`/`ttsModel` in Settings) and auto-speaks tutor replies; if you want the Web Speech voice picker back, add it to `chatui.js`/Settings.
+One idea from the original single-file app that didn't carry over: a browser-voice picker + rate control (v1.2 uses OpenAI TTS exclusively — `ttsVoice`/`ttsModel` in Settings — and auto-speaks tutor replies). Worth adding back to `chatui.js`/Settings if the Web Speech API voice picker is ever wanted alongside OpenAI TTS.
 
 ## Security (read before adding a second tester)
 

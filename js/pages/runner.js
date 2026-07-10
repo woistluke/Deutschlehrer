@@ -304,7 +304,15 @@ async function mountSentencePhase() {
     const gen = await quizCall(buildSentencePrompt(sessionCtx), 'Generate the sentence drills now.');
     items = (gen.items || []).filter((it) => isWellFormed(it, { allowFillBlank: false }));
   } catch (e) {
-    zone.innerHTML = `<div class="card"><p class="verdict wrong">Couldn't build sentences: ${esc(e.message)}</p><button class="btn primary" id="skip-sent">Skip to conversation →</button></div>`;
+    // Mirror the quiz phase's retry pattern (transient network/API hiccups
+    // shouldn't force skipping the whole phase) while keeping a skip escape
+    // hatch in case retrying doesn't help (e.g. a missing/invalid API key).
+    zone.innerHTML = `<div class="card"><p class="verdict wrong">Couldn't build sentences: ${esc(e.message)}</p>
+      <div class="row" style="margin-top:8px;gap:8px">
+        <button class="btn primary" id="retry-sent">Try again</button>
+        <button class="btn ghost" id="skip-sent">Skip to conversation →</button>
+      </div></div>`;
+    zone.querySelector('#retry-sent').onclick = mountSentencePhase;
     zone.querySelector('#skip-sent').onclick = nextPhase;
     return;
   }
