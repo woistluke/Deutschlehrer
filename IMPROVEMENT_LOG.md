@@ -4,7 +4,7 @@ Append-only log of daily review proposals for the Auf Deutsch app and their outc
 
 ---
 
-## 2026-07-10 — proposed
+## 2026-07-10 — implemented (all 6 approved same-day, commit 3d2e4a7)
 
 1. **Fix: Conversation tab loses chat history on "Back to chat."** In `js/pages/conversation.js`, `renderChat()` unconditionally creates a brand-new `createRichChat()` instance (and re-sends an opening greeting) every time the chat screen re-mounts — including when returning from flashcards or the session-review screen. Checking your vocab flashcards mid-conversation currently wipes the whole conversation instead of resuming it. Only the "change topic" path should reset; the flashcards round-trip should preserve the existing chat instance/history. Effort: small-medium. Files: `js/pages/conversation.js`.
 
