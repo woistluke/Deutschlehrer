@@ -419,6 +419,129 @@ export async function splitCombinedVocabForAllUsers() {
   }
   return results;
 }
+// Known duplicate groups from the vocab-dedup content pass (see
+// IMPROVEMENT_LOG.md 2026-07-10 second pass, item 4) — maps a normalized
+// German term to whichever unit's copy should survive when duplicates of it
+// are found live in an account. Used only as a tiebreak hint: any duplicate
+// NOT in this list (e.g. one added manually after seeding) still gets
+// merged, just falling back to "keep the oldest row" instead.
+const DUPLICATE_KEEP_UNIT = {
+  'ich bin': 'Greetings & Introductions',
+  'die familie': 'Greetings & Introductions',
+  'woher kommst du?': 'Greetings & Introductions',
+  'morgen': 'Numbers, Time & Days',
+  'das wochenende': 'Numbers, Time & Days',
+  'wie alt bist du?': 'Talking About Yourself',
+  'ich möchte': 'Café & Restaurant',
+  'ein ticket kaufen': 'Directions & Getting Around',
+  'die fahrkarte': 'Directions & Getting Around',
+  'die wohnung': 'Housing & Furniture',
+  'der sommer': 'Weather & Seasons',
+  'gegessen': 'Perfekt — Irregular & Sein-Verbs',
+  'das ziel': 'Perfekt — Irregular & Sein-Verbs',
+  'die erfahrung': 'Perfekt — Irregular & Sein-Verbs',
+  'ich bin nach hause gegangen': 'Perfekt — Irregular & Sein-Verbs',
+  'ich freue mich darauf': 'Future Plans',
+  'die freizeit': 'Hobbies & Interests',
+  'ich denke, dass': 'Expressing Opinions',
+  'deshalb': 'Giving Reasons',
+  'nämlich': 'Giving Reasons',
+  'die meinung': 'News & Current Events',
+  'die kritik': 'News & Current Events',
+  'die flexibilität': 'Nominalization & Formal Writing',
+  'trotzdem': 'Nominalization & Formal Writing',
+  'in diesem zusammenhang': 'Literary & Academic Texts',
+};
+
+// Merge exact-duplicate vocab (same German text, case/whitespace-insensitive)
+// found across different units in one account into a single surviving row,
+// combining their progress instead of leaving two untracked-together rows
+// for what's really one word. The reverse of splitCombinedVocab above:
+//   - the survivor is whichever row's unit matches DUPLICATE_KEEP_UNIT for
+//     that term, if any; otherwise the oldest row (by created_at, when
+//     available) wins;
+//   - times_seen / times_correct are SUMMED across the merged rows;
+//   - srs_level / mastery_score take the MAX across the group, so folding a
+//     weaker duplicate in never downgrades existing progress;
+//   - next_due / last_seen come from whichever row had that max
+//     mastery_score, as the most representative schedule;
+//   - known_errors is the union of every merged row's;
+//   - every non-surviving row is removed via deleteVocab (which also cleans
+//     up its own progress row).
+// Safe to re-run: once a group is down to one row, there's nothing left to
+// find.
+export async function mergeDuplicateVocab(userId) {
+  const sections = await getCurriculum(userId);
+  const report = { groupsMerged: 0, rowsRemoved: 0 };
+
+  const groups = {};
+  for (const sec of sections) {
+    for (const unit of sec.units) {
+      for (const v of (unit.vocab || [])) {
+        if (!v.german) continue;
+        const key = norm(v.german);
+        (groups[key] ||= []).push({ v, unit });
+      }
+    }
+  }
+
+  for (const [key, rows] of Object.entries(groups)) {
+    if (rows.length < 2) continue;
+
+    const preferredUnit = DUPLICATE_KEEP_UNIT[key];
+    let survivorIdx = preferredUnit != null
+      ? rows.findIndex((r) => norm(r.unit.title) === norm(preferredUnit))
+      : -1;
+    if (survivorIdx === -1) {
+      survivorIdx = rows.reduce((bestIdx, r, i) => {
+        const a = r.v.created_at ? new Date(r.v.created_at).getTime() : Infinity;
+        const b = rows[bestIdx].v.created_at ? new Date(rows[bestIdx].v.created_at).getTime() : Infinity;
+        return a < b ? i : bestIdx;
+      }, 0);
+    }
+
+    const survivor = rows[survivorIdx];
+    const others = rows.filter((_, i) => i !== survivorIdx);
+
+    const progressRows = await Promise.all(rows.map((r) => getProgress(userId, r.v.vocab_id)));
+    const present = progressRows.filter(Boolean);
+
+    if (present.length) {
+      const timesSeen = present.reduce((n, p) => n + (p.times_seen || 0), 0);
+      const timesCorrect = Math.min(timesSeen, present.reduce((n, p) => n + (p.times_correct || 0), 0));
+      const best = present.reduce((a, b) => ((b.mastery_score || 0) > (a.mastery_score || 0) ? b : a));
+      const knownErrors = [...new Set(present.flatMap((p) => p.known_errors || []))];
+      await upsertProgress(userId, survivor.v.vocab_id, {
+        item_type: 'vocab', unit_id: survivor.unit.unit_id,
+        times_seen: timesSeen, times_correct: timesCorrect,
+        srs_level: best.srs_level || 0,
+        mastery_score: best.mastery_score || 0,
+        last_seen: best.last_seen || null,
+        next_due: best.next_due || null,
+        known_errors: knownErrors,
+      });
+    }
+
+    for (const other of others) {
+      await deleteVocab(other.v.vocab_id); // also removes its progress row
+      report.rowsRemoved++;
+    }
+    report.groupsMerged++;
+  }
+
+  return report;
+}
+
+export async function mergeDuplicateVocabForAllUsers() {
+  const users = await listUsers();
+  const results = [];
+  for (const u of users) {
+    const report = await mergeDuplicateVocab(u.user_id);
+    results.push({ userId: u.user_id, ...report });
+  }
+  return results;
+}
+
 
 // The active unit = first non-complete unit in course order. A unit with no
 // vocab yet (e.g. a title-only stub just added in the Curriculum editor) has

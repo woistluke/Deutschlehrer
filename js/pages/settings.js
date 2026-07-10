@@ -83,6 +83,16 @@ export function mountSettings(el, ctx) {
       </div>
       <pre id="set-split-report" class="muted" style="margin-top:10px;white-space:pre-wrap"></pre>
     </div>
+
+    <div class="card">
+      <h2>Admin — merge duplicate vocab</h2>
+      <p class="muted" style="margin-top:0">A handful of vocab words ended up duplicated verbatim across two different units in the seed curriculum (fixed in <code>seed.js</code>, but that alone doesn't touch accounts already seeded from the old version). This finds any of those in an existing account and merges each pair into one row — summing review counts, keeping the better mastery/schedule state, and removing the redundant row — instead of leaving two untracked-together entries for what's really one word. Safe to re-run.</p>
+      <div class="row wrap" style="gap:8px">
+        <button class="btn primary" id="set-merge-user">Merge duplicate vocab (this handle)</button>
+        <button class="btn danger" id="set-merge-all">Merge for ALL users</button>
+      </div>
+      <pre id="set-merge-report" class="muted" style="margin-top:10px;white-space:pre-wrap"></pre>
+    </div>
   `;
 
   el.querySelector('#set-user-save').onclick = async () => {
@@ -159,6 +169,35 @@ export function mountSettings(el, ctx) {
       const results = await store.splitCombinedVocabForAllUsers();
       out.textContent = results.map((r) =>
         r.rowsSplit ? `${r.userId}: split ${r.rowsSplit} row(s) into ${r.rowsCreated} entries.` : `${r.userId}: nothing to split.`
+      ).join('\n');
+    } catch (e) {
+      out.textContent = 'Error: ' + e.message;
+    } finally { btn.disabled = false; }
+  };
+
+  el.querySelector('#set-merge-user').onclick = async () => {
+    const btn = el.querySelector('#set-merge-user');
+    const out = el.querySelector('#set-merge-report');
+    btn.disabled = true; out.textContent = `Merging for ${ctx.userId}…`;
+    try {
+      const r = await store.mergeDuplicateVocab(ctx.userId);
+      out.textContent = r.groupsMerged
+        ? `${ctx.userId}: merged ${r.groupsMerged} duplicate group(s), removed ${r.rowsRemoved} redundant row(s).`
+        : `${ctx.userId}: no duplicates found — already clean.`;
+    } catch (e) {
+      out.textContent = 'Error: ' + e.message;
+    } finally { btn.disabled = false; }
+  };
+
+  el.querySelector('#set-merge-all').onclick = async () => {
+    if (!confirm('Merge duplicate vocab for EVERY user account? This sums each duplicate\'s review history into one surviving row and removes the rest. Proceed?')) return;
+    const btn = el.querySelector('#set-merge-all');
+    const out = el.querySelector('#set-merge-report');
+    btn.disabled = true; out.textContent = 'Merging for all users…';
+    try {
+      const results = await store.mergeDuplicateVocabForAllUsers();
+      out.textContent = results.map((r) =>
+        r.groupsMerged ? `${r.userId}: merged ${r.groupsMerged} group(s), removed ${r.rowsRemoved} row(s).` : `${r.userId}: no duplicates found.`
       ).join('\n');
     } catch (e) {
       out.textContent = 'Error: ' + e.message;
