@@ -85,8 +85,18 @@ export async function mount(el, ctx) {
 
     const r = rounds[idx];
     const src = byId[r.id];
-    const left = PRONOUNS.map((p) => ({ id: p.key, text: p.label }));
-    const right = shuffle(PRONOUNS.map((p) => ({ id: p.key, text: r.forms[p.key].trim() })));
+    // Matched by TEXT, not by which pronoun the LLM originally generated a
+    // given form for: several pronouns legitimately share an identical
+    // conjugated form in German (wir/sie/Sie always do — "wir möchten" and
+    // "Sie möchten" are both correct spelled "möchten" — and it's not rare,
+    // it's the normal pattern for every verb). Tagging tiles by pronoun id
+    // and requiring an exact id match would mark a factually-correct pairing
+    // wrong just because the learner happened to tap the "other" identical
+    // tile. Comparing normalized text instead means any tile with the right
+    // spelling counts, however many pronouns share it.
+    const norm = (s) => (s || '').trim().toLowerCase();
+    const left = PRONOUNS.map((p) => ({ text: p.label, answer: r.forms[p.key].trim() }));
+    const right = shuffle(PRONOUNS.map((p) => ({ text: r.forms[p.key].trim() })));
 
     el.innerHTML = `
       <div class="row spread" style="margin-bottom:14px">
@@ -99,9 +109,10 @@ export async function mount(el, ctx) {
       </div>
       <div class="card">
         <h3 style="margin:0 0 4px">Tap a pronoun, then its matching conjugated form</h3>
+        <p class="muted" style="font-size:.82rem;margin-top:0">Some pronouns share the same form (e.g. wir/sie/Sie) — either matching tile counts.</p>
         <div class="match-grid">
-          <div class="match-col">${left.map((x) => `<button class="match-item" data-side="pn" data-id="${esc(x.id)}">${esc(x.text)}</button>`).join('')}</div>
-          <div class="match-col">${right.map((x) => `<button class="match-item" data-side="vb" data-id="${esc(x.id)}">${esc(x.text)}</button>`).join('')}</div>
+          <div class="match-col">${left.map((x) => `<button class="match-item" data-side="pn" data-answer="${esc(x.answer)}">${esc(x.text)}</button>`).join('')}</div>
+          <div class="match-col">${right.map((x) => `<button class="match-item" data-side="vb" data-form="${esc(x.text)}">${esc(x.text)}</button>`).join('')}</div>
         </div>
         <div class="row spread" style="margin-top:14px">
           <span class="muted" id="round-progress">0 / ${left.length} matched</span>
@@ -118,11 +129,11 @@ export async function mount(el, ctx) {
       if (b.dataset.side === 'pn') {
         el.querySelectorAll('.match-item[data-side="pn"]').forEach((x) => x.classList.remove('sel'));
         b.classList.add('sel');
-        selected = { el: b, id: b.dataset.id };
+        selected = { el: b, answer: norm(b.dataset.answer) };
         return;
       }
       if (!selected) return;
-      if (b.dataset.id === selected.id) {
+      if (norm(b.dataset.form) === selected.answer) {
         b.classList.add('matched'); selected.el.classList.add('matched'); selected.el.classList.remove('sel');
         selected = null; matched++;
         el.querySelector('#round-progress').textContent = `${matched} / ${left.length} matched`;
