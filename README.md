@@ -1,6 +1,8 @@
-# Auf Deutsch — curriculum edition (v1.2)
+# Auf Deutsch — curriculum edition
 
 A curriculum engine layered onto the conversational German tutor. Five pages: **Today** (runner), **Exercises** (a catalog of standalone practice games), **Curriculum** (editor), **Stats**, **Settings**. Static, no build step — drops onto GitHub Pages as-is. Uses Supabase for cross-device storage, with a local-storage fallback so it runs before you add keys.
+
+**Version:** shown top-right in the app itself (source of truth is `VERSION` in `js/config.js`, not this doc, so it can't go stale). `#.#.#` — the patch number bumps with every implemented change; major/minor only change on Luke's explicit say-so.
 
 **New in v1.2 (Path A):** the rich conversation features from the original single-file app are now ported into the modular app as the Free Conversation exercise, and each lesson runs as a guided four-phase flow.
 

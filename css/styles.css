@@ -71,6 +71,7 @@ button { font-family: inherit; }
   overflow: hidden; text-overflow: ellipsis; max-width: 40vw;
 }
 .user-pill b { color: #fff; font-weight: 600; }
+.version-pill { font-size: .72rem; color: #7a869a; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* ---- page frame ---- */
 .page { max-width: var(--maxw); width: 100%; margin: 0 auto; padding: 30px 20px 80px; overflow-wrap: break-word; }

@@ -1,6 +1,15 @@
 // config.js — defaults and constants. User-editable values live in Settings
 // and are stored per-browser; these are only the fallback defaults.
 
+// App version — #.#.# (major.minor.patch), shown top-right in the topbar
+// (see app.js renderShell) so Luke can confirm which build he's testing
+// against before giving feedback. Convention: the 3rd number (patch) is
+// bumped by whoever implements a change, every time, as part of that same
+// commit — no exceptions, no batching multiple changes under one patch
+// bump. The 1st/2nd numbers (major/minor) only change when Luke explicitly
+// says so; never bump those on your own judgment.
+export const VERSION = '1.0.0';
+
 export const DEFAULTS = {
   // Conversation tutor (Groq). Verify the current model string at console.groq.com.
   tutorModel: 'llama-3.3-70b-versatile',

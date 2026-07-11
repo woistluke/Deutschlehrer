@@ -1,5 +1,5 @@
 // app.js — shell, routing, and shared context.
-import { LS, DEFAULTS } from './config.js';
+import { LS, DEFAULTS, VERSION } from './config.js';
 import * as store from './store.js';
 import { mountRunner } from './pages/runner.js';
 import { mountEditor } from './pages/editor.js';
@@ -61,6 +61,7 @@ function renderShell() {
           ${Object.entries(PAGES).map(([k, p]) => `<button data-page="${k}">${p.label}</button>`).join('')}
         </nav>
         <span class="user-pill">Handle: <b>${ctx.userId}</b>${ctx.remote ? '' : ' · local'}</span>
+        <span class="version-pill" title="Build version — tells you which build you're testing">v${VERSION}</span>
       </div>
     </header>
     <main class="page" id="view"></main>
