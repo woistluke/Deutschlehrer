@@ -3,9 +3,10 @@
 // of selectable cards; each exercise is its own module under js/exercises/
 // exporting { meta: {id, title, blurb}, mount(el, ctx) }. Adding a new
 // exercise later is just a new module + one line in CATALOG below.
+import * as freeConversation from '../exercises/freeConversation.js';
 import * as conjugationMatch from '../exercises/conjugationMatch.js';
 
-const CATALOG = [conjugationMatch];
+const CATALOG = [freeConversation, conjugationMatch];
 
 export async function mountExercises(el, ctx) {
   el.innerHTML = `

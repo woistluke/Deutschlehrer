@@ -1,10 +1,18 @@
-// pages/conversation.js — free-practice German conversation, now with the full
-// feature set ported from the original single-file app: level + topic setup,
-// structured replies (translation, inline corrections, tips, vocab chips),
-// flashcards from collected vocab, missed-card tracking, and a session review.
+// exercises/freeConversation.js — "Free Conversation": free-practice German
+// chat, with the full feature set ported from the original single-file app —
+// level + topic setup, structured replies (translation, inline corrections,
+// tips, vocab chips), flashcards from collected vocab, missed-card tracking,
+// and a session review. Was its own top-level nav tab; now lives in the
+// Exercises catalog alongside the other standalone practice games.
 import { createRichChat, escapeHtml } from '../chatui.js';
 import { buildFreeConvoPrompt } from '../prompts.js';
 import * as store from '../store.js';
+
+export const meta = {
+  id: 'free-conversation',
+  title: 'Free Conversation',
+  blurb: 'Just talk — pick a level and topic, no scoring. Words the tutor uses become flashcards.',
+};
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1'];
 const TOPICS = ['Greetings & Small Talk', 'Ordering Food', 'Shopping', 'Travel & Directions',
@@ -20,7 +28,7 @@ function savePrefs(p) { localStorage.setItem(LS_PREFS, JSON.stringify(p)); }
 function loadMissed() { try { return JSON.parse(localStorage.getItem(LS_MISSED)) || []; } catch { return []; } }
 function saveMissed(m) { localStorage.setItem(LS_MISSED, JSON.stringify(m)); }
 
-export function mountConversation(el, ctx) {
+export function mount(el, ctx) {
   const prefs = loadPrefs();
   const view = {
     screen: 'setup',                       // setup | chat | flashcards | review
@@ -56,7 +64,10 @@ export function mountConversation(el, ctx) {
   function renderSetup() {
     el.innerHTML = `
       <div class="page-head">
-        <div class="eyebrow">Practice</div>
+        <div class="row spread" style="align-items:flex-start">
+          <div class="eyebrow" style="margin-bottom:0">Practice</div>
+          <button class="btn ghost sm" id="ex-back">← Exercises</button>
+        </div>
         <h1>Free conversation</h1>
         <p>Just talk — no curriculum, no scoring. Pick a level and topic, then chat. Words the tutor uses become flashcards.</p>
       </div>
@@ -76,6 +87,7 @@ export function mountConversation(el, ctx) {
     el.querySelectorAll('[data-level]').forEach((b) => b.onclick = () => { view.level = b.dataset.level; savePrefs({ level: view.level, topic: view.topic }); renderSetup(); });
     el.querySelectorAll('[data-topic]').forEach((b) => b.onclick = () => { view.topic = b.dataset.topic; savePrefs({ level: view.level, topic: view.topic }); renderSetup(); });
     el.querySelector('#start').onclick = startChat;
+    el.querySelector('#ex-back').onclick = () => ctx.go('exercises');
     const om = el.querySelector('#open-missed-setup');
     if (om) om.onclick = () => startFlashcards(view.missed);
   }
@@ -114,6 +126,7 @@ export function mountConversation(el, ctx) {
           <button class="btn sm" id="open-cards">📚 <span id="cards-count">${view.vocab.length}</span></button>
           ${view.missed.length ? `<button class="btn sm" id="open-missed">🔁 ${view.missed.length}</button>` : ''}
           <button class="btn ghost sm" id="back-setup">Change topic</button>
+          <button class="btn ghost sm" id="ex-back">← Exercises</button>
         </div>
       </div>
       <div class="card">
@@ -123,6 +136,7 @@ export function mountConversation(el, ctx) {
     // "Change topic" is the one path that should genuinely restart the
     // conversation — clear any saved history so the new chat instance opens fresh.
     el.querySelector('#back-setup').onclick = () => { savedHistory = null; endConversationSession(); view.screen = 'setup'; renderSetup(); };
+    el.querySelector('#ex-back').onclick = () => { endConversationSession(); ctx.go('exercises'); };
     el.querySelector('#open-cards').onclick = () => { savedHistory = chat.getHistory(); startFlashcards(view.vocab); };
     const om = el.querySelector('#open-missed');
     if (om) om.onclick = () => { savedHistory = chat.getHistory(); startFlashcards(view.missed); };

@@ -39,7 +39,7 @@ Rules:
 - vocab: 1–3 useful words drawn from YOUR reply.
 - tip: only when genuinely useful, otherwise "".`;
 
-// Free-practice conversation (the Conversation tab). Level + topic chosen by
+// Free-practice conversation (the Free Conversation exercise, in the Exercises tab). Level + topic chosen by
 // the learner; not tied to the curriculum.
 export function buildFreeConvoPrompt({ level = 'A2', topic = 'Free Conversation' } = {}) {
   return `You are an immersive German conversation partner for a ${level}-level learner. Topic: "${topic}".

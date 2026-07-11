@@ -1,18 +1,19 @@
 // app.js — shell, routing, and shared context.
 import { LS, DEFAULTS } from './config.js';
 import * as store from './store.js';
-import { mountConversation } from './pages/conversation.js';
 import { mountRunner } from './pages/runner.js';
 import { mountEditor } from './pages/editor.js';
 import { mountExercises } from './pages/exercises.js';
 import { mountStats } from './pages/stats.js';
 import { mountSettings } from './pages/settings.js';
 
+// Free Conversation used to be its own tab here; it now lives in the
+// Exercises catalog (js/exercises/freeConversation.js) alongside the other
+// standalone practice games — see js/pages/exercises.js.
 const PAGES = {
   runner:       { label: 'Today',        mount: mountRunner },
   exercises:    { label: 'Exercises',    mount: mountExercises },
   curriculum:   { label: 'Curriculum',   mount: mountEditor },
-  conversation: { label: 'Conversation', mount: mountConversation },
   stats:        { label: 'Stats',        mount: mountStats },
   settings:     { label: 'Settings',     mount: mountSettings },
 };

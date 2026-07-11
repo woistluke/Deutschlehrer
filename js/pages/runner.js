@@ -426,7 +426,7 @@ async function mountSentencePhase() {
   }
 
   // "listen_type" items (see prompts.js buildSentencePrompt) are a listening-
-  // dictation exercise: TTS (already wired for the Conversation tab, via
+  // dictation exercise: TTS (already wired for the Free Conversation exercise, via
   // ai.js's speak()) reads the sentence aloud instead of showing it as text,
   // and the learner types what they heard. Nothing else in the app tests
   // listening comprehension in isolation — the CEFR estimate in cefr.js

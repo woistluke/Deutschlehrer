@@ -1,5 +1,5 @@
 // chatui.js — the rich structured conversation component, shared by the
-// Conversation tab and the curriculum conversation phase. Ports the original
+// Free Conversation exercise and the curriculum conversation phase. Ports the original
 // single-file app's features: reply + translation toggle, inline corrections,
 // grammar/culture tip, vocab chips, per-line TTS, and mic transcription.
 import { tutorStructured, speak, transcribe } from './ai.js';
