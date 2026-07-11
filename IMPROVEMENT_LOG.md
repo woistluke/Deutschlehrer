@@ -49,7 +49,7 @@ Fresh review after yesterday's two passes (6 + 6 items, all implemented). Checke
 
 4. **Data: `sessions.items_reviewed` / `items_introduced` / `errors_observed` are defined in `schema.sql` but never written.** `store.createSession` only ever sets `mode`/`unit_id`/`outcome`/timestamps — these three JSONB columns stay `[]` forever. Not causing any bug today (Stats recomputes everything from `progress` instead), but it's dead schema surface that implies richer per-session history exists when it doesn't. Either wire them up (record which items were graded/introduced each session, enabling a future "session history" view) or drop the columns to cut confusion. Lower priority than 1–3. Effort: medium if wiring up, trivial if dropping. Files: `js/store.js`, `js/pages/runner.js`, `schema.sql`.
 
-## 2026-07-11 (second pass) — proposed
+## 2026-07-11 (second pass) — implemented (all 4 approved same-day, commit 8d90b04)
 
 Deeper follow-up at Luke's request: (1) review what informs the quality of generated sentences/quiz items, (2) identify practice methods the app doesn't currently use. Checked today's first-pass items against current code first — all four are in place and working.
 
