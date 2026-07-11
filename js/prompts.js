@@ -115,15 +115,22 @@ export function buildSentencePrompt(ctx) {
   const { unit, priorWeak = [] } = ctx;
   const pool = (unit?.vocab || []).map((v) => `${v.german} — ${v.english}${v.notes ? `  (note: ${v.notes})` : ''}`);
   const priorPool = priorWeak.map((v) => `${v.german} — ${v.english}${v.notes ? `  (note: ${v.notes})` : ''}`);
-  return `You are a German single-sentence drill generator for an A1–A2 learner. Using the vocabulary below, create exactly 5 SINGLE-SENTENCE practice items. Each item is ONE sentence only — never a multi-turn conversation.
+  const grammarFocus = (unit?.grammar_focus || []).join('; ');
+  return `You are a German single-sentence drill generator. Using the vocabulary below, create exactly 5 SINGLE-SENTENCE practice items. Each item is ONE sentence only — never a multi-turn conversation.
 
-Mix these three types roughly evenly:
+Use these five types:
 - "en_to_de": give a short English sentence; the learner translates it into German.
 - "de_to_en": give a short German sentence; the learner translates it into English.
 - "respond_de": ask one simple question in German; the learner answers in a single German sentence.
+- "word_order": "prompt" is a short English gloss of what to say; "answer" is the single correct, natural German sentence for it. The learner is shown that sentence's words scrambled and taps them back into the right order — so pick a sentence with only one natural word order (no cases where two orderings are equally correct).
+- "listen_type": a listening-dictation item. "answer" is a natural, complete German sentence using this lesson's vocabulary — this is the sentence that gets read aloud to the learner, who then types what they heard. "prompt" is just a short instruction (e.g. "Listen and type what you hear") since the UI never shows the German text. Pick an unambiguous sentence — avoid homophones or wording where more than one spelling would sound identical when spoken.
+Make exactly ONE of the 5 items type "word_order" and exactly ONE type "listen_type" (this unit's grammar focus below is a good source for both, when there is one); mix the remaining three roughly evenly across en_to_de/de_to_en/respond_de.
 
-Use the lesson vocabulary wherever it fits. Keep everything at A1–A2.
-${priorPool.length ? `
+Use the lesson vocabulary wherever it fits. Keep the language at the level implied by this unit's grammar focus and vocabulary below — don't default to simple present-tense sentences if the grammar focus below calls for something else (a past-tense unit's drills should be in the past tense, etc).
+${grammarFocus ? `
+THIS UNIT'S GRAMMAR FOCUS — build AT LEAST 1-2 of the 5 items to specifically exercise this, not just the vocabulary (e.g. a Perfekt-tense focus should produce a Perfekt-tense sentence; a word-order focus should require the correct word order to answer correctly):
+${grammarFocus}
+` : ''}${priorPool.length ? `
 PRIORITY REVIEW — words from EARLIER units the learner hasn't mastered yet. Spend at least ${Math.min(2, priorPool.length)} of the 5 items on these before drawing more from this lesson's vocabulary:
 ${priorPool.map((p) => `- ${p}`).join('\n')}
 ` : ''}
@@ -132,29 +139,61 @@ solution to that SAME item's "prompt" only — never borrow wording, vocabulary,
 sentence fragments from a different item in this batch. Each "prompt" and each
 "answer" is exactly one complete sentence (for respond_de, one natural reply) — do
 not merge two sentences together into one field. Never produce a "fill_blank" item
-in this phase — only en_to_de, de_to_en, or respond_de.
+in this phase — only en_to_de, de_to_en, respond_de, word_order, or listen_type.
 
 THIS LESSON'S VOCABULARY:
 ${pool.map((p) => `- ${p}`).join('\n') || '- (none)'}
 
 Respond with STRICT JSON only, no prose, no markdown fences:
-{"items":[{"id":"s1","type":"en_to_de|de_to_en|respond_de","prompt":"<what the learner sees>","answer":"<the intended/model answer>","item_label":"<the vocab item this maps to, or empty>"}]}`;
+{"items":[{"id":"s1","type":"en_to_de|de_to_en|respond_de|word_order|listen_type","prompt":"<what the learner sees>","answer":"<the intended/model answer — for word_order, the single correctly-ordered German sentence; for listen_type, the sentence to be read aloud>","item_label":"<the vocab item this maps to, or empty>"}]}`;
+}
+
+// Dictation-specific grader — deliberately NOT the lenient "possible
+// solution" grader (GRADER_PROMPT) below, because dictation tests whether
+// the learner correctly HEARD the sentence: a paraphrase that means the
+// same thing but isn't what was actually said should count as wrong here,
+// where GRADER_PROMPT would happily accept it.
+export const DICTATION_GRADER_PROMPT = `You are grading a German LISTENING DICTATION exercise: the learner heard one German sentence read aloud and typed what they heard. Compare their transcription to the source sentence.
+
+Mark it correct only if the transcription captures the SAME WORDS as the source sentence (minor casing/punctuation differences and a single obvious typo are fine). Mark it incorrect if a word is wrong, missing, or added, or an umlaut is dropped/misplaced (ö/ü/ä matter) — even if the resulting sentence would still be grammatical German on its own, since this exercise is testing what was actually heard, not general German ability.
+
+Respond with STRICT JSON only, no prose, no markdown fences:
+{"correct":true|false,"feedback":"<one short line, naming the specific word(s) that differed if incorrect>","error_type":"spelling|umlaut|vocab|grammar|none","intended":"<the source sentence, only when the transcription differs from it, else empty>"}`;
+
+// Renders a vocab-pool line with its usage/grammar note kept intact (e.g.
+// "Triggers normal verb-second order, unlike weil.") — dropping this for the
+// quiz pool specifically (as an earlier version of this file did) starved
+// the quiz generator of exactly the hint it needs to write a grammatically
+// sound fill_blank around that item.
+function poolLine(v) {
+  return `${v.german} — ${v.english}${v.notes ? `  (note: ${v.notes})` : ''}`;
 }
 
 // Quiz/grader prompt. stage 'generate' produces questions; stage 'grade'
 // evaluates an answer leniently — see below.
 export function buildQuizPrompt(ctx, stage) {
   const { unit, reviewItems = [], weakPoints = [], priorWeak = [], vocabById = {} } = ctx;
-  const priorLines = priorWeak.map((v) => `${v.german} — ${v.english}`);
+  const priorLines = priorWeak.map(poolLine);
   const restLines = [
-    ...(unit?.vocab || []).map((v) => `${v.german} — ${v.english}`),
-    ...reviewItems.map((p) => { const v = vocabById[p.item_id]; return v ? `${v.german} — ${v.english}` : null; }).filter(Boolean),
-    ...weakPoints.map((p) => { const v = vocabById[p.item_id]; return v ? `${v.german} — ${v.english}` : null; }).filter(Boolean),
+    ...(unit?.vocab || []).map(poolLine),
+    ...reviewItems.map((p) => { const v = vocabById[p.item_id]; return v ? poolLine(v) : null; }).filter(Boolean),
+    // Weak points additionally carry *why* they're weak (known_errors, e.g.
+    // "umlaut") when available — that's more useful to the generator than a
+    // generic vocab note, so it takes priority over v.notes when both exist.
+    ...weakPoints.map((p) => {
+      const v = vocabById[p.item_id]; if (!v) return null;
+      const errs = (p.known_errors || []).join('; ');
+      return errs ? `${v.german} — ${v.english}  (recurring issue: ${errs})` : poolLine(v);
+    }).filter(Boolean),
   ].filter((line, i, arr) => arr.indexOf(line) === i && !priorLines.includes(line)); // de-dupe, and keep out of "rest" whatever's already in priority
+  const grammarFocus = (unit?.grammar_focus || []).join('; ');
 
   if (stage === 'generate') {
     return `You are a German quiz generator. Build a short mixed quiz (5–7 items) from the item pool below. Mix directions: some German→English, some English→German, at least one fill-in-the-blank sentence, and at least one that targets a known weak point.
-${priorLines.length ? `
+${grammarFocus ? `
+THIS UNIT'S GRAMMAR FOCUS — make sure AT LEAST 1-2 questions specifically test this, not just vocabulary recall (e.g. a Perfekt-tense focus should have a question that requires the correct Perfekt form; a word-order focus should require the correct order to answer correctly):
+${grammarFocus}
+` : ''}${priorLines.length ? `
 PRIORITY: allocate AT LEAST half of this quiz's questions to the "PRIORITY REVIEW" pool below — words from EARLIER units the learner hasn't mastered yet — before drawing from the rest of the pool. The goal is closing the gap on older units, not just drilling the current one.
 ` : ''}
 Every question is fully independent: its "answer" must be the direct, faithful

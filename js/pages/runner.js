@@ -5,8 +5,8 @@
 //   3. Conversation— rich tutor chat weaving in this + earlier lessons
 //   4. Quiz        — graded leniently (a valid answer counts even if unexpected)
 import * as store from '../store.js';
-import { buildUnitConvoPrompt, buildSentencePrompt, buildQuizPrompt } from '../prompts.js';
-import { quizCall } from '../ai.js';
+import { buildUnitConvoPrompt, buildSentencePrompt, buildQuizPrompt, DICTATION_GRADER_PROMPT } from '../prompts.js';
+import { quizCall, speak } from '../ai.js';
 import { createRichChat, escapeHtml } from '../chatui.js';
 import { applyAnswer, unitMeetsThreshold } from '../srs.js';
 import { UNIT_COMPLETION_RATIO } from '../config.js';
@@ -299,7 +299,76 @@ function mountVocabPhase() {
       selected = null;
     }
   });
-  zone.querySelector('#vocab-continue').onclick = nextPhase;
+  zone.querySelector('#vocab-continue').onclick = () => mountRecognitionStep(vocab);
+}
+
+// Quick, no-API multiple-choice recognition round for words in this session
+// that have never been seen before (times_seen === 0 / no progress row yet).
+// Sits between vocab-matching and the sentence drills: every other rep in
+// the app (sentences, quiz) is a full LLM round-trip requiring free recall,
+// appropriately hard for consolidation but slow/costly for a word's very
+// first exposure. This gives brand-new words one cheap, instant recognition
+// rep first. Deliberately does NOT touch SRS progress (no recordResult/
+// upsertProgress call) — it's a warm-up, not a graded rep; the sentence and
+// quiz phases that follow are what actually move the mastery needle.
+async function mountRecognitionStep(vocab) {
+  const zone = ROOT.querySelector('#phase-zone');
+  const progByItem = {};
+  (await store.allProgress(CTX.userId)).forEach((p) => { progByItem[p.item_id] = p; });
+  const newWords = vocab.filter((v) => !(progByItem[v.vocab_id]?.times_seen > 0));
+  if (!newWords.length) { nextPhase(); return; }
+
+  const allVocab = Object.values(sessionCtx.vocabById || {});
+  let qidx = 0;
+  renderQuestion();
+
+  function renderQuestion() {
+    if (qidx >= newWords.length) {
+      zone.innerHTML = `<div class="card"><div class="eyebrow">Phase 1 · Quick recognition complete</div><h3 style="margin:6px 0 10px">Warmed up on ${newWords.length} new word${newWords.length > 1 ? 's' : ''}.</h3><button class="btn primary" id="recog-continue">Continue to sentences →</button></div>`;
+      zone.querySelector('#recog-continue').onclick = nextPhase;
+      return;
+    }
+    const v = newWords[qidx];
+    const options = buildRecognitionOptions(v, allVocab);
+    zone.innerHTML = `
+      <div class="card qcard">
+        <div class="eyebrow">Phase 1 · Quick recognition · ${qidx + 1} of ${newWords.length}</div>
+        <h3 style="margin:6px 0 4px">${esc(v.german)}</h3>
+        <p class="muted" style="font-size:.84rem;margin-top:0">First look at a brand-new word — what does it mean?</p>
+        <div class="mc-options">
+          ${options.map((o, i) => `<button class="mc-option" data-i="${i}">${esc(o.english)}</button>`).join('')}
+        </div>
+        <div id="recog-verdict"></div>
+      </div>
+    `;
+    let answered = false;
+    zone.querySelectorAll('.mc-option').forEach((btn) => btn.onclick = () => {
+      if (answered) return;
+      answered = true;
+      const i = Number(btn.dataset.i);
+      const correct = options[i].vocab_id === v.vocab_id;
+      zone.querySelectorAll('.mc-option').forEach((b, bi) => {
+        b.disabled = true;
+        if (options[bi].vocab_id === v.vocab_id) b.classList.add('correct');
+        else if (bi === i) b.classList.add('wrong');
+      });
+      zone.querySelector('#recog-verdict').innerHTML =
+        `<p class="verdict ${correct ? 'correct' : 'wrong'}" style="margin-top:10px">${correct ? '✓ Correct' : `✗ It means "${esc(v.english)}"`}</p>
+         <button class="btn sm" id="recog-next" style="margin-top:6px">${qidx + 1 < newWords.length ? 'Next' : 'Continue →'}</button>`;
+      zone.querySelector('#recog-next').onclick = () => { qidx++; renderQuestion(); };
+    });
+  }
+}
+
+// Distractors for the quick-recognition round: 3 other curriculum words with
+// a different English meaning than the correct one (so there's exactly one
+// right answer), pulled from the FULL curriculum vocab pool (not just this
+// lesson) so there's always enough to choose from.
+function buildRecognitionOptions(v, allVocab) {
+  const correctEn = (v.english || '').trim().toLowerCase();
+  const pool = allVocab.filter((x) => x.vocab_id !== v.vocab_id && x.german && x.english && x.english.trim().toLowerCase() !== correctEn);
+  const distractors = shuffle(pool).slice(0, 3);
+  return shuffle([v, ...distractors]);
 }
 
 // ---- Phase 2: single-sentence practice ------------------------------------
@@ -335,6 +404,8 @@ async function mountSentencePhase() {
       return;
     }
     const it = items[idx];
+    if (it.type === 'word_order') { renderScramble(it); return; }
+    if (it.type === 'listen_type') { renderListening(it); return; }
     zone.innerHTML = `
       <div class="card qcard">
         <div class="eyebrow">Phase 2 · Sentence ${idx + 1} of ${items.length} · ${esc(typeLabel(it.type))}</div>
@@ -354,6 +425,139 @@ async function mountSentencePhase() {
     ans.addEventListener('keydown', (e) => { if (e.key === 'Enter') check(); });
   }
 
+  // "listen_type" items (see prompts.js buildSentencePrompt) are a listening-
+  // dictation exercise: TTS (already wired for the Conversation tab, via
+  // ai.js's speak()) reads the sentence aloud instead of showing it as text,
+  // and the learner types what they heard. Nothing else in the app tests
+  // listening comprehension in isolation — the CEFR estimate in cefr.js
+  // reports a "Listening" score, but until now nothing fed it a distinct
+  // listening signal.
+  function renderListening(it) {
+    zone.innerHTML = `
+      <div class="card qcard">
+        <div class="eyebrow">Phase 2 · Sentence ${idx + 1} of ${items.length} · Listening</div>
+        <h3 style="margin:6px 0 10px">Listen and type what you hear</h3>
+        <button class="btn" id="listen-play">🔊 Play sentence</button>
+        <div class="composer" style="margin-top:12px">
+          <input id="sent-ans" placeholder="Was hast du gehört?" autocomplete="off">
+          <button class="btn primary" id="sent-check">Check</button>
+        </div>
+        <div id="sent-verdict"></div>
+      </div>
+    `;
+    const playBtn = zone.querySelector('#listen-play');
+    const play = async () => {
+      playBtn.disabled = true;
+      try {
+        const url = await speak(it.answer);
+        const audio = new Audio(url);
+        const cleanup = () => URL.revokeObjectURL(url);
+        audio.addEventListener('ended', cleanup, { once: true });
+        audio.addEventListener('error', cleanup, { once: true });
+        await audio.play();
+      } catch (e) {
+        zone.querySelector('#sent-verdict').innerHTML = `<p class="verdict wrong">${esc(e.message)}</p>`;
+      } finally {
+        playBtn.disabled = false;
+      }
+    };
+    playBtn.onclick = play;
+    play(); // auto-play once on entry, same as the tutor's auto-speak in chatui.js
+    const ans = zone.querySelector('#sent-ans');
+    const checkBtn = zone.querySelector('#sent-check');
+    ans.focus();
+    const check = () => gradeSentence(it, ans.value.trim());
+    checkBtn.onclick = check;
+    ans.addEventListener('keydown', (e) => { if (e.key === 'Enter') check(); });
+  }
+
+  // "word_order" items (see prompts.js buildSentencePrompt) test the unit's
+  // word-order grammar point directly: the learner taps this item's German
+  // words back into the correct sequence, rather than typing free-form —
+  // several curriculum units' grammar_focus is specifically about word order
+  // (verb-second/verb-final, participle placement, question word order),
+  // and neither the vocab-matching nor free-typed sentence exercises isolate
+  // that skill on its own.
+  function renderScramble(it) {
+    const tokens = it.answer.trim().split(/\s+/);
+    const bank = shuffle(tokens.map((text, i) => ({ text, key: `${i}-${Math.random().toString(36).slice(2)}` })));
+    const chosen = [];
+    zone.innerHTML = `
+      <div class="card qcard">
+        <div class="eyebrow">Phase 2 · Sentence ${idx + 1} of ${items.length} · Put in order</div>
+        <h3 style="margin:6px 0 4px">${esc(it.prompt)}</h3>
+        <p class="muted" style="font-size:.82rem;margin-top:0">Tap the German words in the right order.</p>
+        <div class="scramble-target" id="scramble-target"></div>
+        <div class="scramble-bank" id="scramble-bank"></div>
+        <div class="row" style="margin-top:12px;gap:8px">
+          <button class="btn ghost sm" id="scramble-reset">Reset</button>
+          <button class="btn primary" id="scramble-check" disabled>Check</button>
+        </div>
+        <div id="sent-verdict"></div>
+      </div>
+    `;
+    const targetEl = zone.querySelector('#scramble-target');
+    const bankEl = zone.querySelector('#scramble-bank');
+    const checkBtn = zone.querySelector('#scramble-check');
+
+    function paint() {
+      targetEl.innerHTML = chosen.length
+        ? chosen.map((t) => `<button class="scramble-chip chosen" data-key="${esc(t.key)}">${esc(t.text)}</button>`).join('')
+        : `<span class="muted" style="font-size:.85rem">Tap words below…</span>`;
+      bankEl.innerHTML = bank.filter((t) => !chosen.includes(t))
+        .map((t) => `<button class="scramble-chip" data-key="${esc(t.key)}">${esc(t.text)}</button>`).join('');
+      targetEl.querySelectorAll('[data-key]').forEach((b) => b.onclick = () => {
+        const i = chosen.findIndex((t) => t.key === b.dataset.key);
+        if (i >= 0) chosen.splice(i, 1);
+        paint();
+      });
+      bankEl.querySelectorAll('[data-key]').forEach((b) => b.onclick = () => {
+        const t = bank.find((x) => x.key === b.dataset.key);
+        if (t) chosen.push(t);
+        paint();
+      });
+      checkBtn.disabled = chosen.length !== tokens.length;
+    }
+    paint();
+
+    zone.querySelector('#scramble-reset').onclick = () => { chosen.length = 0; paint(); };
+    checkBtn.onclick = () => gradeWordOrder(it, chosen.map((t) => t.text));
+  }
+
+  // Graded locally against it.answer's own word order — deterministic, no
+  // LLM round-trip, and it's actually what this exercise is testing (unlike
+  // the lenient "possible solution" grader used elsewhere, which is testing
+  // meaning, not order). Guarded against double-submit via checkBtn's
+  // data-locked flag, same reasoning as gradeSentence below.
+  async function gradeWordOrder(it, chosenWords) {
+    const checkBtn = zone.querySelector('#scramble-check');
+    if (!checkBtn || checkBtn.dataset.locked === '1') return;
+    checkBtn.dataset.locked = '1';
+    checkBtn.disabled = true;
+    zone.querySelectorAll('.scramble-chip').forEach((b) => b.disabled = true);
+    const expected = it.answer.trim().split(/\s+/);
+    const norm = (arr) => arr.join(' ').toLowerCase().replace(/[.,!?]+$/, '');
+    const correct = norm(chosenWords) === norm(expected);
+    const verdict = {
+      correct,
+      feedback: correct ? 'Correct word order.' : 'Not quite the right order.',
+      intended: correct ? '' : it.answer, // only surface "Intended:" when it differs, matching the other graders' convention
+      error_type: correct ? 'none' : 'grammar',
+    };
+    await applyVerdict(it, verdict);
+  }
+
+  // Shared tail for both grading paths: paint the verdict, persist SRS
+  // progress, and wire the next-item button.
+  async function applyVerdict(it, verdict) {
+    const vEl = zone.querySelector('#sent-verdict');
+    zone.querySelector('.qcard').classList.add(verdict.correct ? 'correct' : 'wrong');
+    vEl.innerHTML = verdictHtml(verdict, it.answer) +
+      `<button class="btn sm" id="sent-next" style="margin-top:8px">${idx + 1 < items.length ? 'Next sentence' : 'Finish phase'}</button>`;
+    await recordResult(it, verdict);
+    zone.querySelector('#sent-next').onclick = () => { idx++; renderSentence(); };
+  }
+
   // Guarded against double-submit: a double-click, or Enter followed by a
   // click, could otherwise fire two grading calls for the same sentence
   // before the first resolves, each independently updating SRS progress
@@ -369,18 +573,20 @@ async function mountSentencePhase() {
     vEl.innerHTML = `<p class="muted">Checking…</p>`;
     let verdict;
     try {
-      verdict = await quizCall(buildQuizPrompt(sessionCtx, 'grade'),
-        `Type: ${it.type}\nPrompt: ${it.prompt}\nIntended answer: ${it.answer}\nLearner's answer: ${answer}`);
+      // Dictation uses its own stricter, transcription-accuracy grader
+      // (see prompts.js) instead of the lenient "possible solution" one —
+      // the point of this item type is whether the learner heard it right,
+      // not whether their answer is *a* valid German sentence.
+      verdict = it.type === 'listen_type'
+        ? await quizCall(DICTATION_GRADER_PROMPT, `Source sentence: ${it.answer}\nLearner's transcription: ${answer}`)
+        : await quizCall(buildQuizPrompt(sessionCtx, 'grade'),
+            `Type: ${it.type}\nPrompt: ${it.prompt}\nIntended answer: ${it.answer}\nLearner's answer: ${answer}`);
     } catch (e) {
       vEl.innerHTML = `<p class="verdict wrong">${esc(e.message)}</p>`;
       checkBtn.disabled = false; ansEl.disabled = false;
       return;
     }
-    zone.querySelector('.qcard').classList.add(verdict.correct ? 'correct' : 'wrong');
-    vEl.innerHTML = verdictHtml(verdict, it.answer) +
-      `<button class="btn sm" id="sent-next" style="margin-top:8px">${idx + 1 < items.length ? 'Next sentence' : 'Finish phase'}</button>`;
-    await recordResult(it, verdict);
-    zone.querySelector('#sent-next').onclick = () => { idx++; renderSentence(); };
+    await applyVerdict(it, verdict);
   }
 }
 
@@ -482,7 +688,7 @@ function verdictHtml(verdict, fallbackAnswer) {
 }
 
 function typeLabel(t) {
-  return ({ en_to_de: 'English → German', de_to_en: 'German → English', respond_de: 'Answer in German', fill_blank: 'Fill in the blank' })[t] || t || '';
+  return ({ en_to_de: 'English → German', de_to_en: 'German → English', respond_de: 'Answer in German', fill_blank: 'Fill in the blank', word_order: 'Put in order', listen_type: 'Listening' })[t] || t || '';
 }
 
 // item_label is free text from the AI grader, not a stable id — resolve it to
@@ -618,6 +824,7 @@ function isWellFormed(it, { allowFillBlank } = {}) {
     if (!/_{3,}/.test(prompt)) return false;               // must contain a blank marker
     if (/[.!?].*[.!?]/.test(answer)) return false;          // answer reads like >1 sentence
   }
+  if (it.type === 'word_order' && answer.split(/\s+/).length < 2) return false; // nothing to reorder
   return true;
 }
 
