@@ -248,3 +248,33 @@ Accept minor punctuation/casing slips. Note umlaut and spelling problems specifi
 
 Respond with STRICT JSON only, no prose, no markdown fences:
 {"correct":true|false,"feedback":"<one short line>","error_type":"spelling|umlaut|vocab|grammar|none","intended":"<the intended solution when it differs from the learner's, else empty>"}`;
+
+// ---- Verb Conjugation Match exercise (js/exercises/conjugationMatch.js) ---
+// This curriculum's vocab is mostly natural first-person example phrases
+// ("Ich brauche — I need", "Ich hätte gern — I would like"), not bare
+// dictionary infinitives — so rather than trying to regex-extract a verb
+// stem and hand-conjugate it (German has enough irregularity — sein, the
+// modals, stem-changing strong verbs — that a bespoke rules engine would be
+// risky with no test suite to check it against), this hands the candidate
+// vocab lines to the model and asks it to both identify the verb AND
+// produce the full conjugation table, skipping anything that isn't
+// actually built around one conjugatable verb.
+export function buildConjugationPrompt(candidates) {
+  const pool = candidates.map((v) => `${v.vocab_id} :: ${v.german} — ${v.english}`).join('\n');
+  return `You are a German verb conjugation reference helping build a practice exercise. Each line below is a vocabulary entry the learner has already studied — some are bare infinitives ("brauchen — to need"), most are natural first-person example phrases ("Ich brauche — I need", "Ich hätte gern — I would like"). For each line that is built around ONE conjugatable verb, identify that verb's infinitive and produce its FULL conjugation for all six persons, in the SAME tense/mood as the example (e.g. "Ich möchte" and "Ich hätte" are already modal/Konjunktiv II forms — conjugate in that same mood, don't switch to a different tense).
+
+Skip any line that isn't actually built around a single conjugatable verb (a greeting, a noun phrase, a phrase with no clear single verb, etc.) — just omit it from your output entirely, don't guess.
+
+VOCAB ENTRIES (format is "id :: German — English"):
+${pool}
+
+Rules:
+- Each form is the conjugated verb ONLY — no pronoun, no extra words, no trailing complement (e.g. drop the "gern" from "Ich hätte gern", drop the "aus" complement from "Ich komme aus"). For "brauchen": ich="brauche", du="brauchst", er_sie_es="braucht", wir="brauchen", ihr="braucht", sie_Sie="brauchen".
+- "er_sie_es" is the single 3rd-person-singular form (shared by er/sie/es). "sie_Sie" is the 3rd-person-plural/formal-"you" form (shared by sie/Sie).
+- Get irregular and stem-changing verbs right (e.g. "fahren" → du fährst, er fährt; "sein" → ich bin, du bist, er ist, wir sind, ihr seid, sie sind) — a learner is drilling on exactly this.
+- "infinitive" in your output is the verb's dictionary form (e.g. "brauchen", "sein", "mögen" for möchte).
+- Match each output entry back to its input id exactly.
+
+Respond with STRICT JSON only, no prose, no markdown fences:
+{"verbs":[{"id":"<the input id>","infinitive":"<dictionary form>","forms":{"ich":"...","du":"...","er_sie_es":"...","wir":"...","ihr":"...","sie_Sie":"..."}}]}`;
+}

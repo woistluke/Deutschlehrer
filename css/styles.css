@@ -322,6 +322,11 @@ textarea { resize: vertical; min-height: 60px; }
 
 .intended { border-left: 2px solid var(--gold-soft); padding-left: 8px; margin-top: 6px; }
 
+/* ---- exercises catalog ---- */
+.ex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.ex-card { display: block; width: 100%; text-align: left; cursor: pointer; transition: .12s; }
+.ex-card:hover { border-color: var(--gold-deep); box-shadow: 0 2px 4px rgba(27,35,48,.08), 0 10px 26px rgba(27,35,48,.08); }
+
 /* ---- quick recognition multiple-choice (phase 1) ---- */
 .mc-options { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .mc-option {
