@@ -96,7 +96,20 @@ export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, placeh
     } catch (e) { status('Mikrofon nicht verfügbar: ' + e.message); }
   }
 
-  async function say(text) { try { new Audio(await speak(text)).play(); } catch (e) { status(e.message); } }
+  // speak() hands back a fresh object URL per call (see ai.js) — revoke it
+  // once this specific clip finishes (or errors) so long sessions with
+  // auto-speak-every-turn don't accumulate unreleased blob URLs/audio
+  // buffers for the life of the tab.
+  async function say(text) {
+    try {
+      const url = await speak(text);
+      const audio = new Audio(url);
+      const cleanup = () => URL.revokeObjectURL(url);
+      audio.addEventListener('ended', cleanup, { once: true });
+      audio.addEventListener('error', cleanup, { once: true });
+      await audio.play();
+    } catch (e) { status(e.message); }
+  }
 
   function paint() {
     chatEl.innerHTML = messages.map(renderBubble).join('');

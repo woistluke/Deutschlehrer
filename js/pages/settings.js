@@ -60,7 +60,11 @@ export function mountSettings(el, ctx) {
     <button class="btn primary" id="set-save">Save settings</button>
     <span id="set-status" class="muted" style="margin-left:12px"></span>
 
-    <div class="card">
+    <details class="admin-maintenance" style="margin-top:16px">
+      <summary class="btn ghost" style="cursor:pointer;display:inline-block">Maintenance — one-time data migrations</summary>
+      <p class="muted" style="font-size:.82rem;margin:8px 0 0">These fix past seed-data issues (already applied to the current seed). Safe and idempotent to re-run, but there's nothing to do here on a routine visit.</p>
+
+    <div class="card" style="margin-top:10px">
       <h2>Admin — curriculum sync</h2>
       <p class="muted" style="margin-top:0">Pushes any sections/units/vocab from the current seed curriculum (<code>seed.js</code>) into existing accounts. Additive only by default — it never deletes anything and never touches a unit's progress (status, mastery). Re-run this any time the seed curriculum changes.</p>
       <label class="row" style="gap:8px;align-items:center;font-weight:normal">
@@ -93,6 +97,7 @@ export function mountSettings(el, ctx) {
       </div>
       <pre id="set-merge-report" class="muted" style="margin-top:10px;white-space:pre-wrap"></pre>
     </div>
+    </details>
   `;
 
   el.querySelector('#set-user-save').onclick = async () => {

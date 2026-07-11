@@ -4,6 +4,7 @@
 // flashcards from collected vocab, missed-card tracking, and a session review.
 import { createRichChat, escapeHtml } from '../chatui.js';
 import { buildFreeConvoPrompt } from '../prompts.js';
+import * as store from '../store.js';
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1'];
 const TOPICS = ['Greetings & Small Talk', 'Ordering Food', 'Shopping', 'Travel & Directions',
@@ -19,7 +20,7 @@ function savePrefs(p) { localStorage.setItem(LS_PREFS, JSON.stringify(p)); }
 function loadMissed() { try { return JSON.parse(localStorage.getItem(LS_MISSED)) || []; } catch { return []; } }
 function saveMissed(m) { localStorage.setItem(LS_MISSED, JSON.stringify(m)); }
 
-export function mountConversation(el) {
+export function mountConversation(el, ctx) {
   const prefs = loadPrefs();
   const view = {
     screen: 'setup',                       // setup | chat | flashcards | review
@@ -36,6 +37,13 @@ export function mountConversation(el) {
   // conversation instead of starting a brand-new one (and re-sending an
   // opening greeting). Only a genuine "change topic" / fresh start clears it.
   let savedHistory = null;
+  // The one session row for the current chat, so Stats' streak/session counts
+  // (built from the `sessions` table — see js/pages/runner.js for the same
+  // pattern on the curriculum side) include free-conversation practice, not
+  // just curriculum/review lessons. Created once when a genuinely new
+  // conversation starts; carried through flashcards/review round-trips;
+  // closed out when the learner changes topic or picks a new one.
+  let sessionId = null;
 
   function rerender() {
     if (view.screen === 'setup') renderSetup();
@@ -74,8 +82,24 @@ export function mountConversation(el) {
 
   function startChat() {
     savedHistory = null; // starting fresh from setup — new topic, new conversation
+    sessionId = null;
     view.screen = 'chat';
     renderChat();
+    if (ctx?.userId) {
+      store.createSession(ctx.userId, { mode: 'free' })
+        .then((s) => { sessionId = s?.session_id || null; })
+        .catch((e) => console.error('Failed to log conversation session:', e));
+    }
+  }
+
+  // Close out the current session row, if any (fire-and-forget — losing this
+  // update just leaves outcome/ended_at as their defaults, it doesn't affect
+  // Stats since streak/session counts key off started_at, not ended_at).
+  function endConversationSession() {
+    if (!sessionId) return;
+    store.updateSession(sessionId, { ended_at: new Date().toISOString(), outcome: 'in_progress' })
+      .catch((e) => console.error('Failed to close conversation session:', e));
+    sessionId = null;
   }
 
   // ---- chat -----------------------------------------------------------------
@@ -98,7 +122,7 @@ export function mountConversation(el) {
     `;
     // "Change topic" is the one path that should genuinely restart the
     // conversation — clear any saved history so the new chat instance opens fresh.
-    el.querySelector('#back-setup').onclick = () => { savedHistory = null; view.screen = 'setup'; renderSetup(); };
+    el.querySelector('#back-setup').onclick = () => { savedHistory = null; endConversationSession(); view.screen = 'setup'; renderSetup(); };
     el.querySelector('#open-cards').onclick = () => { savedHistory = chat.getHistory(); startFlashcards(view.vocab); };
     const om = el.querySelector('#open-missed');
     if (om) om.onclick = () => { savedHistory = chat.getHistory(); startFlashcards(view.missed); };

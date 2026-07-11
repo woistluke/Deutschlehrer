@@ -41,6 +41,11 @@ let phaseIdx = 0;
 let quiz = null;         // { questions, idx, results: [] }
 let convo = null;        // rich chat controller for the conversation phase
 let lastOutcome = 'in_progress';  // for the sessions log: 'in_progress' | 'unit_complete'
+// Populates sessions.items_introduced / items_reviewed / errors_observed
+// (defined in schema.sql, previously always written as []). Reset per
+// session in startSession/startDueReview, filled in as recordResult()
+// grades quiz/sentence answers, and persisted in endSession().
+let sessionLog = { introduced: new Set(), reviewed: new Set(), errors: [] };
 
 // Pick this session's ~SESSION_SIZE words: never-seen words first (to work
 // through the whole unit over successive lessons), then backfill with the
@@ -171,6 +176,7 @@ async function buildContext(unit, section, mode) {
 
 async function startSession(unit, section, mode) {
   lastOutcome = 'in_progress';
+  sessionLog = { introduced: new Set(), reviewed: new Set(), errors: [] };
   sessionCtx = await buildContext(unit, section, mode);
   if (mode === 'curriculum') {
     sessionCtx.unit = { ...unit, vocab: await selectSessionVocab(unit) };
@@ -186,6 +192,7 @@ async function startSession(unit, section, mode) {
 
 async function startDueReview(sections) {
   lastOutcome = 'in_progress';
+  sessionLog = { introduced: new Set(), reviewed: new Set(), errors: [] };
   const due = await store.getDueReviewItems(CTX.userId, 12);
   if (!due.length) { alert('Nothing due right now — nicely done.'); return; }
   const vocabById = buildVocabMap(sections);
@@ -510,6 +517,14 @@ async function recordResult(q, verdict) {
     item_type: 'vocab', unit_id: vocab.unit_id, known_errors: [...known], ...upd,
   });
 
+  // Log for the session row (items_introduced/items_reviewed/errors_observed
+  // in schema.sql) — "introduced" = never had a graded attempt before now.
+  if ((existing.times_seen || 0) > 0) sessionLog.reviewed.add(itemId);
+  else sessionLog.introduced.add(itemId);
+  if (!verdict.correct && verdict.error_type && verdict.error_type !== 'none') {
+    sessionLog.errors.push({ item_id: itemId, error_type: verdict.error_type });
+  }
+
   // This answer can belong to an earlier unit pulled in as priority review
   // (or a unit being reviewed directly) rather than the unit driving this
   // session. Re-check THAT unit's own completion too, so it can cross the
@@ -578,7 +593,13 @@ async function maybePromote(unit) {
 
 async function endSession() {
   if (session) {
-    await store.updateSession(session.session_id, { ended_at: new Date().toISOString(), outcome: lastOutcome });
+    await store.updateSession(session.session_id, {
+      ended_at: new Date().toISOString(),
+      outcome: lastOutcome,
+      items_introduced: [...sessionLog.introduced],
+      items_reviewed: [...sessionLog.reviewed],
+      errors_observed: sessionLog.errors,
+    });
   }
   await renderLanding();
 }
