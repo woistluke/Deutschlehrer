@@ -16,6 +16,7 @@ import * as store from '../store.js';
 import { buildConjugationPrompt } from '../prompts.js';
 import { quizCall } from '../ai.js';
 import { escapeHtml as esc } from '../chatui.js';
+import { mountFeedbackFlag } from '../feedback.js';
 
 const PRONOUNS = [
   { key: 'ich', label: 'ich' },
@@ -45,9 +46,15 @@ export async function mount(el, ctx) {
   }
 
   renderStatus(el, 'Building conjugations…');
+  // Same "never let feedback plumbing break the exercise" defensiveness as
+  // runner.js: if content_feedback isn't queryable yet (e.g. Supabase
+  // schema not re-run), just generate without past-issues context.
+  const pastIssues = await store.allContentFeedback(ctx.userId)
+    .then((all) => store.recentFeedbackNotes(all, 'conjugation_match'))
+    .catch(() => []);
   let table;
   try {
-    table = await quizCall(buildConjugationPrompt(shuffle(candidates).slice(0, CANDIDATE_POOL)), 'Generate the conjugation table now.');
+    table = await quizCall(buildConjugationPrompt(shuffle(candidates).slice(0, CANDIDATE_POOL), pastIssues), 'Generate the conjugation table now.');
   } catch (e) {
     renderError(el, ctx, e.message);
     return;
@@ -118,9 +125,18 @@ export async function mount(el, ctx) {
           <span class="muted" id="round-progress">0 / ${left.length} matched</span>
           <button class="btn primary" id="round-continue" disabled>${idx + 1 < rounds.length ? 'Next verb →' : 'Finish →'}</button>
         </div>
+        <div class="fb-slot" style="margin-top:10px"></div>
       </div>
     `;
     el.querySelector('#ex-back').onclick = () => ctx.go('exercises');
+    mountFeedbackFlag(el.querySelector('.fb-slot'), ctx.userId, {
+      contextType: 'conjugation_match',
+      itemType: null,
+      unitId: null,
+      unitTitle: null,
+      prompt: r.infinitive || src.german,
+      answer: PRONOUNS.map((p) => `${p.key}=${r.forms[p.key]}`).join(', '),
+    });
 
     let selected = null;
     let matched = 0;

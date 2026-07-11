@@ -621,3 +621,39 @@ export async function getUnmasteredFromPriorUnits(userId, activeUnitId, limit = 
   weak.sort((a, b) => a.unitPos - b.unitPos || a.mastery - b.mastery);
   return weak.slice(0, limit).map((w) => w.v);
 }
+
+// ---- content feedback (flag-an-issue on generated exercises/quiz items) --
+// Learner-flagged problems with LLM-generated content — see js/feedback.js
+// for the UI and prompts.js for how these get read back into generation.
+// Deliberately negative-only (per Luke: there's no "this question was
+// great" signal to collect, only "this was wrong/too advanced/vague"), so
+// treat this as a running list of known pitfalls to avoid repeating, not a
+// rating system.
+export const createContentFeedback = (userId, fields) =>
+  insert('content_feedback', {
+    user_id: userId,
+    context_type: fields.contextType,
+    item_type: fields.itemType || null,
+    unit_id: fields.unitId || null,
+    unit_title: fields.unitTitle || null,
+    prompt_text: fields.prompt || null,
+    answer_text: fields.answer || null,
+    note: fields.note,
+    status: 'open',
+    created_at: new Date().toISOString(),
+  });
+
+export const allContentFeedback = (userId) => selectWhere('content_feedback', { user_id: userId });
+
+// Most recent N feedback notes for a given context (sentence_drill | quiz |
+// conjugation_match), formatted as short strings ready to drop into a
+// prompt. Takes the already-fetched full list rather than querying itself,
+// so callers that need multiple context types (e.g. runner.js wanting both
+// sentence_drill and quiz) only fetch once.
+export function recentFeedbackNotes(all, contextType, limit = 6) {
+  return (all || [])
+    .filter((f) => f.context_type === contextType && f.note)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice(0, limit)
+    .map((f) => (f.prompt_text ? `"${f.prompt_text}" — ${f.note}` : f.note));
+}

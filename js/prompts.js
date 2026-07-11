@@ -22,6 +22,17 @@ function weakLines(items, vocabById) {
   }).join('\n');
 }
 
+// Learner-flagged problems with past generated content (js/feedback.js +
+// store.js's content_feedback table) fed back in as things to specifically
+// avoid repeating. This is the app's only content-quality feedback loop —
+// there's no positive counterpart being collected, so every note here is a
+// real complaint, not a style example. Used by buildSentencePrompt,
+// buildQuizPrompt's 'generate' stage, and buildConjugationPrompt.
+function pastIssuesBlock(issues) {
+  if (!issues || !issues.length) return '';
+  return `\nLEARNER-FLAGGED ISSUES FROM PAST QUESTIONS — real feedback, not examples to imitate. Do not repeat these specific problems (too advanced for the level, vague/unclear, wrong, etc.):\n${issues.map((n) => `- ${n}`).join('\n')}\n`;
+}
+
 // The structured conversation format — shared by the free-practice tab and the
 // curriculum conversation phase. The tutor model returns JSON the UI renders as
 // reply + translation + inline corrections + tip + vocab chips.
@@ -112,7 +123,7 @@ Hold a real conversation, correct errors kindly inline, keep turns short, and be
 // Single-sentence practice generator (lesson phase 2). Produces ONE-sentence
 // drills mixing English→German, German→English, and respond-in-German.
 export function buildSentencePrompt(ctx) {
-  const { unit, priorWeak = [] } = ctx;
+  const { unit, priorWeak = [], pastSentenceIssues = [] } = ctx;
   const pool = (unit?.vocab || []).map((v) => `${v.german} — ${v.english}${v.notes ? `  (note: ${v.notes})` : ''}`);
   const priorPool = priorWeak.map((v) => `${v.german} — ${v.english}${v.notes ? `  (note: ${v.notes})` : ''}`);
   const grammarFocus = (unit?.grammar_focus || []).join('; ');
@@ -127,7 +138,7 @@ Use these five types:
 Make exactly ONE of the 5 items type "word_order" and exactly ONE type "listen_type" (this unit's grammar focus below is a good source for both, when there is one); mix the remaining three roughly evenly across en_to_de/de_to_en/respond_de.
 
 Use the lesson vocabulary wherever it fits. Keep the language at the level implied by this unit's grammar focus and vocabulary below — don't default to simple present-tense sentences if the grammar focus below calls for something else (a past-tense unit's drills should be in the past tense, etc).
-${grammarFocus ? `
+${pastIssuesBlock(pastSentenceIssues)}${grammarFocus ? `
 THIS UNIT'S GRAMMAR FOCUS — build AT LEAST 1-2 of the 5 items to specifically exercise this, not just the vocabulary (e.g. a Perfekt-tense focus should produce a Perfekt-tense sentence; a word-order focus should require the correct word order to answer correctly):
 ${grammarFocus}
 ` : ''}${priorPool.length ? `
@@ -172,7 +183,7 @@ function poolLine(v) {
 // Quiz/grader prompt. stage 'generate' produces questions; stage 'grade'
 // evaluates an answer leniently — see below.
 export function buildQuizPrompt(ctx, stage) {
-  const { unit, reviewItems = [], weakPoints = [], priorWeak = [], vocabById = {} } = ctx;
+  const { unit, reviewItems = [], weakPoints = [], priorWeak = [], vocabById = {}, pastQuizIssues = [] } = ctx;
   const priorLines = priorWeak.map(poolLine);
   const restLines = [
     ...(unit?.vocab || []).map(poolLine),
@@ -190,7 +201,7 @@ export function buildQuizPrompt(ctx, stage) {
 
   if (stage === 'generate') {
     return `You are a German quiz generator. Build a short mixed quiz (5–7 items) from the item pool below. Mix directions: some German→English, some English→German, at least one fill-in-the-blank sentence, and at least one that targets a known weak point.
-${grammarFocus ? `
+${pastIssuesBlock(pastQuizIssues)}${grammarFocus ? `
 THIS UNIT'S GRAMMAR FOCUS — make sure AT LEAST 1-2 questions specifically test this, not just vocabulary recall (e.g. a Perfekt-tense focus should have a question that requires the correct Perfekt form; a word-order focus should require the correct order to answer correctly):
 ${grammarFocus}
 ` : ''}${priorLines.length ? `
@@ -259,12 +270,12 @@ Respond with STRICT JSON only, no prose, no markdown fences:
 // vocab lines to the model and asks it to both identify the verb AND
 // produce the full conjugation table, skipping anything that isn't
 // actually built around one conjugatable verb.
-export function buildConjugationPrompt(candidates) {
+export function buildConjugationPrompt(candidates, pastIssues = []) {
   const pool = candidates.map((v) => `${v.vocab_id} :: ${v.german} — ${v.english}`).join('\n');
   return `You are a German verb conjugation reference helping build a practice exercise. Each line below is a vocabulary entry the learner has already studied — some are bare infinitives ("brauchen — to need"), most are natural first-person example phrases ("Ich brauche — I need", "Ich hätte gern — I would like"). For each line that is built around ONE conjugatable verb, identify that verb's infinitive and produce its FULL conjugation for all six persons, in the SAME tense/mood as the example (e.g. "Ich möchte" and "Ich hätte" are already modal/Konjunktiv II forms — conjugate in that same mood, don't switch to a different tense).
 
 Skip any line that isn't actually built around a single conjugatable verb (a greeting, a noun phrase, a phrase with no clear single verb, etc.) — just omit it from your output entirely, don't guess.
-
+${pastIssuesBlock(pastIssues)}
 VOCAB ENTRIES (format is "id :: German — English"):
 ${pool}
 

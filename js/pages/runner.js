@@ -10,6 +10,7 @@ import { quizCall, speak } from '../ai.js';
 import { createRichChat, escapeHtml } from '../chatui.js';
 import { applyAnswer, unitMeetsThreshold } from '../srs.js';
 import { UNIT_COMPLETION_RATIO } from '../config.js';
+import { mountFeedbackFlag } from '../feedback.js';
 
 const PHASES = [
   { key: 'vocab', label: 'Vocabulary' },
@@ -166,12 +167,21 @@ async function buildContext(unit, section, mode) {
   const sections = await store.getCurriculum(CTX.userId);
   const vocabById = buildVocabMap(sections);
   const unitsById = buildUnitsMap(sections);
-  const [reviewItems, weakPoints, priorWeak] = await Promise.all([
+  const [reviewItems, weakPoints, priorWeak, allFeedback] = await Promise.all([
     store.getDueReviewItems(CTX.userId),
     store.getWeakPoints(CTX.userId),
     mode === 'curriculum' ? store.getUnmasteredFromPriorUnits(CTX.userId, unit.unit_id) : Promise.resolve([]),
+    // Never let a missing/erroring content_feedback table (e.g. Supabase
+    // schema not yet re-run for it) break session start — degrade to no
+    // past-issues context instead.
+    store.allContentFeedback(CTX.userId).catch(() => []),
   ]);
-  return { unit, section, sectionTitle: section?.title, reviewItems, weakPoints, priorWeak, vocabById, unitsById, mode };
+  const pastSentenceIssues = store.recentFeedbackNotes(allFeedback, 'sentence_drill');
+  const pastQuizIssues = store.recentFeedbackNotes(allFeedback, 'quiz');
+  return {
+    unit, section, sectionTitle: section?.title, reviewItems, weakPoints, priorWeak, vocabById, unitsById, mode,
+    pastSentenceIssues, pastQuizIssues,
+  };
 }
 
 async function startSession(unit, section, mode) {
@@ -198,7 +208,12 @@ async function startDueReview(sections) {
   const vocabById = buildVocabMap(sections);
   const unitsById = buildUnitsMap(sections);
   const pseudoUnit = { title: 'Due review', objectives: ['refresh items due for review'], grammar_focus: [], vocab: due.map((p) => vocabById[p.item_id]).filter(Boolean) };
-  sessionCtx = { unit: pseudoUnit, section: null, sectionTitle: 'Review', reviewItems: due, weakPoints: [], priorWeak: [], vocabById, unitsById, mode: 'review' };
+  const allFeedback = await store.allContentFeedback(CTX.userId).catch(() => []);
+  sessionCtx = {
+    unit: pseudoUnit, section: null, sectionTitle: 'Review', reviewItems: due, weakPoints: [], priorWeak: [], vocabById, unitsById, mode: 'review',
+    pastSentenceIssues: store.recentFeedbackNotes(allFeedback, 'sentence_drill'),
+    pastQuizIssues: store.recentFeedbackNotes(allFeedback, 'quiz'),
+  };
   session = await store.createSession(CTX.userId, { mode: 'review', unit_id: null });
   phaseIdx = 0;
   renderSession();
@@ -415,6 +430,7 @@ async function mountSentencePhase() {
           <button class="btn primary" id="sent-check">Check</button>
         </div>
         <div id="sent-verdict"></div>
+        <div class="fb-slot" style="margin-top:10px"></div>
       </div>
     `;
     const ans = zone.querySelector('#sent-ans');
@@ -423,6 +439,7 @@ async function mountSentencePhase() {
     const check = () => gradeSentence(it, ans.value.trim());
     checkBtn.onclick = check;
     ans.addEventListener('keydown', (e) => { if (e.key === 'Enter') check(); });
+    mountQuestionFlag(zone, 'sentence_drill', it.type, it.prompt, it.answer);
   }
 
   // "listen_type" items (see prompts.js buildSentencePrompt) are a listening-
@@ -443,8 +460,10 @@ async function mountSentencePhase() {
           <button class="btn primary" id="sent-check">Check</button>
         </div>
         <div id="sent-verdict"></div>
+        <div class="fb-slot" style="margin-top:10px"></div>
       </div>
     `;
+    mountQuestionFlag(zone, 'sentence_drill', it.type, it.prompt, it.answer);
     const playBtn = zone.querySelector('#listen-play');
     const play = async () => {
       playBtn.disabled = true;
@@ -494,8 +513,10 @@ async function mountSentencePhase() {
           <button class="btn primary" id="scramble-check" disabled>Check</button>
         </div>
         <div id="sent-verdict"></div>
+        <div class="fb-slot" style="margin-top:10px"></div>
       </div>
     `;
+    mountQuestionFlag(zone, 'sentence_drill', it.type, it.prompt, it.answer);
     const targetEl = zone.querySelector('#scramble-target');
     const bankEl = zone.querySelector('#scramble-bank');
     const checkBtn = zone.querySelector('#scramble-check');
@@ -641,6 +662,7 @@ function renderQuestion() {
         <button class="btn primary" id="submit-ans">Check</button>
       </div>
       <div id="verdict"></div>
+      <div class="fb-slot" style="margin-top:10px"></div>
     </div>
   `;
   const ans = zone.querySelector('#ans');
@@ -648,6 +670,7 @@ function renderQuestion() {
   const check = () => gradeAnswer(q, ans.value.trim());
   zone.querySelector('#submit-ans').onclick = check;
   ans.addEventListener('keydown', (e) => { if (e.key === 'Enter') check(); });
+  mountQuestionFlag(zone, 'quiz', q.type, q.prompt, q.answer);
 }
 
 // Guarded against double-submit — see gradeSentence's comment above for why
@@ -685,6 +708,23 @@ function verdictHtml(verdict, fallbackAnswer) {
   const intended = (verdict.intended && verdict.intended.trim()) || (!verdict.correct ? fallbackAnswer : '');
   return `<p class="verdict ${verdict.correct ? 'correct' : 'wrong'}">${verdict.correct ? '✓ Correct' : '✗ Not quite'} — ${esc(verdict.feedback || '')}</p>` +
     (intended ? `<p class="muted intended" style="font-size:.85rem">Intended: ${esc(intended)}</p>` : '');
+}
+
+// Drops a "flag an issue" widget at the bottom of a sentence/quiz card (see
+// js/feedback.js). unit comes from sessionCtx.fullUnit when available (the
+// real unit for a curriculum-mode session, since sessionCtx.unit itself may
+// be a narrowed slice or, for due-review, a synthetic pseudo-unit) so a
+// flagged row stays traceable to a real lesson when there is one.
+function mountQuestionFlag(zone, contextType, itemType, prompt, answer) {
+  const slot = zone.querySelector('.fb-slot');
+  if (!slot) return;
+  const unit = sessionCtx.fullUnit || sessionCtx.unit;
+  mountFeedbackFlag(slot, CTX.userId, {
+    contextType, itemType,
+    unitId: unit?.unit_id || null,
+    unitTitle: sessionCtx.unit?.title || null,
+    prompt, answer,
+  });
 }
 
 function typeLabel(t) {

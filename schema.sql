@@ -91,12 +91,35 @@ create table if not exists sessions (
   outcome      text                                  -- in_progress | unit_complete
 );
 
+-- content_feedback: learner-flagged issues on LLM-generated exercise/quiz
+-- content ("this answer was too vague", "vocab is too advanced for this
+-- lesson", etc.) — see js/feedback.js. Deliberately negative-only: there is
+-- no positive/rating counterpart, this is a running list of known problems.
+-- prompts.js reads recent rows back in as a "known issues to avoid" section
+-- when generating new sentences/quiz items/conjugation tables, so it's the
+-- app's only feedback loop for content quality. unit_id is nullable since
+-- not every flaggable item is unit-scoped (e.g. Verb Conjugation Match).
+create table if not exists content_feedback (
+  content_feedback_id uuid primary key default gen_random_uuid(),
+  user_id      text not null references app_users(user_id) on delete cascade,
+  context_type text not null,                          -- sentence_drill | quiz | conjugation_match
+  item_type    text,                                    -- e.g. en_to_de, fill_blank, word_order...
+  unit_id      uuid references units(unit_id) on delete set null,
+  unit_title   text,
+  prompt_text  text,                                    -- the question/prompt shown to the learner
+  answer_text  text,                                     -- the expected/intended answer, if applicable
+  note         text not null,                            -- the learner's free-text description of the issue
+  status       text not null default 'open',             -- open | reviewed | addressed
+  created_at   timestamptz not null default now()
+);
+
 -- Helpful indexes
 create index if not exists idx_sections_user on sections(user_id, position);
 create index if not exists idx_units_section on units(section_id, position);
 create index if not exists idx_vocab_unit on vocab(unit_id);
 create index if not exists idx_progress_user_due on progress(user_id, next_due);
 create index if not exists idx_sessions_user on sessions(user_id, started_at desc);
+create index if not exists idx_content_feedback_user on content_feedback(user_id, context_type, created_at desc);
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security. Permissive for anon (see SECURITY NOTE above).
@@ -106,13 +129,14 @@ alter table units     enable row level security;
 alter table vocab     enable row level security;
 alter table progress  enable row level security;
 alter table sessions  enable row level security;
+alter table content_feedback enable row level security;
 
 -- One permissive policy per table for the anon role. Replace with
 -- auth.uid()-scoped policies when you add real authentication.
 do $$
 declare t text;
 begin
-  foreach t in array array['app_users','sections','units','vocab','progress','sessions']
+  foreach t in array array['app_users','sections','units','vocab','progress','sessions','content_feedback']
   loop
     execute format(
       'drop policy if exists anon_all on %I; create policy anon_all on %I for all to anon using (true) with check (true);',
