@@ -37,7 +37,7 @@ Deeper follow-up review at Luke's request, after the first six items above were 
 **Follow-up (same day, commit 23fff84):** Luke asked for the item-4 duplicate fix to also apply to his existing account's live data, not just `seed.js`, and offered Supabase credentials. The sandbox this runs in only has network access to `github.com` (verified: it can't resolve or reach `supabase.co` at all — not a permissions issue, an infrastructure allowlist), so direct database access wasn't possible even with valid credentials. Built the same kind of migration used for item 6 instead: `mergeDuplicateVocab()`/`mergeDuplicateVocabForAllUsers()` in `js/store.js`, wired into a new Settings admin card, for Luke to run himself from his browser (which has normal internet access). Merges each duplicate group into one row — summing review counts, taking the best mastery/schedule state, unioning known errors — using the same keep/remove decisions as the seed.js dedupe, falling back to "keep the oldest row" for any duplicate not in that known list (e.g. one added manually). Safe to re-run.
 
 
-## 2026-07-11 — proposed
+## 2026-07-11 — implemented (all 4 approved same-day, commit f6958f4)
 
 Fresh review after yesterday's two passes (6 + 6 items, all implemented). Checked each prior fix against current code first — the vocab-softlock fix, threshold clamp, double-submit guards, sentence-phase retry, timeout handling, and the seed dedupe/split/merge migrations are all present and working as described. No re-proposals below; these are new findings from a deeper pass over ai.js, chatui.js, conversation.js, store.js, settings.js, and schema.sql.
 
