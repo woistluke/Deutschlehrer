@@ -398,12 +398,18 @@ async function mountSentencePhase() {
     // Mirror the quiz phase's retry pattern (transient network/API hiccups
     // shouldn't force skipping the whole phase) while keeping a skip escape
     // hatch in case retrying doesn't help (e.g. a missing/invalid API key).
+    // A missing/invalid key specifically won't be fixed by retrying, though —
+    // point straight at Settings for that case instead.
+    const isKeyError = /add it in settings/i.test(e.message || '');
     zone.innerHTML = `<div class="card"><p class="verdict wrong">Couldn't build sentences: ${esc(e.message)}</p>
       <div class="row" style="margin-top:8px;gap:8px">
-        <button class="btn primary" id="retry-sent">Try again</button>
+        ${isKeyError
+          ? '<button class="btn primary" id="settings-sent">Go to Settings</button>'
+          : '<button class="btn primary" id="retry-sent">Try again</button>'}
         <button class="btn ghost" id="skip-sent">Skip to conversation →</button>
       </div></div>`;
-    zone.querySelector('#retry-sent').onclick = mountSentencePhase;
+    if (isKeyError) zone.querySelector('#settings-sent').onclick = () => CTX.go('settings');
+    else zone.querySelector('#retry-sent').onclick = mountSentencePhase;
     zone.querySelector('#skip-sent').onclick = nextPhase;
     return;
   }
@@ -576,6 +582,12 @@ async function mountSentencePhase() {
     vEl.innerHTML = verdictHtml(verdict, it.answer) +
       `<button class="btn sm" id="sent-next" style="margin-top:8px">${idx + 1 < items.length ? 'Next sentence' : 'Finish phase'}</button>`;
     await recordResult(it, verdict);
+    // recordResult() maps this to a per-vocab progress row keyed by
+    // item_label, which dictation items may not always carry (they're
+    // testing a whole heard sentence, not one word) — track listening
+    // accuracy separately and unconditionally so cefr.js has a real signal
+    // to feed the "Listening" skill, instead of reusing blended accuracy.
+    if (it.type === 'listen_type') await recordListeningResult(!!verdict.correct);
     zone.querySelector('#sent-next').onclick = () => { idx++; renderSentence(); };
   }
 
@@ -644,8 +656,16 @@ async function mountQuizPhase() {
     if (!quiz.questions.length) throw new Error('No questions returned.');
     renderQuestion();
   } catch (e) {
-    zone.innerHTML = `<div class="card"><p class="verdict wrong">Quiz failed: ${esc(e.message)}</p><button class="btn" id="quiz-retry">Try again</button></div>`;
-    zone.querySelector('#quiz-retry').onclick = mountQuizPhase;
+    // Same "point at Settings, not another retry" handling as the sentence
+    // phase above, for a missing/invalid API key.
+    const isKeyError = /add it in settings/i.test(e.message || '');
+    zone.innerHTML = `<div class="card"><p class="verdict wrong">Quiz failed: ${esc(e.message)}</p>${
+      isKeyError
+        ? '<button class="btn" id="quiz-settings">Go to Settings</button>'
+        : '<button class="btn" id="quiz-retry">Try again</button>'
+    }</div>`;
+    if (isKeyError) zone.querySelector('#quiz-settings').onclick = () => CTX.go('settings');
+    else zone.querySelector('#quiz-retry').onclick = mountQuizPhase;
   }
 }
 
@@ -746,6 +766,18 @@ function resolveVocabByLabel(label, vocabById) {
     if (len > bestLen) { bestLen = len; best = v; }
   }
   return best;
+}
+
+// A single aggregate progress row (item_type 'listening', item_id below —
+// not tied to any specific vocab word) tracking accuracy across every
+// listening-dictation rep, independent of recordResult()'s per-vocab
+// item_label mapping. cefr.js reads this to ground the "Listening" skill
+// score in real dictation performance instead of blended overall accuracy.
+const LISTENING_STATS_ID = 'listening:aggregate';
+async function recordListeningResult(correct) {
+  const existing = (await store.getProgress(CTX.userId, LISTENING_STATS_ID)) || {};
+  const upd = applyAnswer(existing, correct);
+  await store.upsertProgress(CTX.userId, LISTENING_STATS_ID, { item_type: 'listening', ...upd });
 }
 
 // Map a graded answer back onto a progress record + SRS update.

@@ -61,8 +61,20 @@ export async function mount(el, ctx) {
   }
 
   const byId = Object.fromEntries(candidates.map((v) => [v.vocab_id, v]));
+  // Dedupe by normalized infinitive before slicing to ROUND_SIZE — nothing
+  // upstream guarantees the LLM's returned verb list is unique (candidates
+  // sent to it can include near-duplicate phrases, e.g. two different "Ich
+  // ..." vocab rows that both conjugate the same underlying verb), and a
+  // repeated verb would show the identical round twice in one session.
+  const seenVerbs = new Set();
   const rounds = (table.verbs || [])
     .filter((r) => r.id && byId[r.id] && r.forms && PRONOUNS.every((p) => (r.forms[p.key] || '').trim()))
+    .filter((r) => {
+      const key = (r.infinitive || byId[r.id].german || '').trim().toLowerCase();
+      if (!key || seenVerbs.has(key)) return false;
+      seenVerbs.add(key);
+      return true;
+    })
     .slice(0, ROUND_SIZE);
 
   if (!rounds.length) {
@@ -207,17 +219,24 @@ function renderEmpty(el, ctx, title, body) {
 }
 
 function renderError(el, ctx, message) {
+  // A missing/invalid API key surfaces here as a normal call failure, but
+  // "Try again" just fails the same way a second time — point straight at
+  // the fix instead (mirrors the same handling in pages/runner.js).
+  const isKeyError = /add it in settings/i.test(message || '');
   el.innerHTML = `
     <div class="page-head"><div class="eyebrow">Exercise</div><h1>${esc(meta.title)}</h1></div>
     <div class="card">
       <p class="verdict wrong">${esc(message)}</p>
       <div class="row" style="margin-top:8px;gap:8px">
-        <button class="btn primary" id="ex-retry">Try again</button>
+        ${isKeyError
+          ? '<button class="btn primary" id="ex-settings">Go to Settings</button>'
+          : '<button class="btn primary" id="ex-retry">Try again</button>'}
         <button class="btn ghost" id="ex-back">← Back to exercises</button>
       </div>
     </div>
   `;
-  el.querySelector('#ex-retry').onclick = () => mount(el, ctx);
+  if (isKeyError) el.querySelector('#ex-settings').onclick = () => ctx.go('settings');
+  else el.querySelector('#ex-retry').onclick = () => mount(el, ctx);
   el.querySelector('#ex-back').onclick = () => ctx.go('exercises');
 }
 

@@ -13,7 +13,14 @@ function toBand(score) {
   return { band: BANDS[idx], within: round2(within), score: round2(s) };
 }
 
-// metrics: { masteredVocab, unitsComplete, unitsTotal, accuracy(0..1), conversationSessions }
+// Minimum listening-dictation reps before its accuracy is trusted as a
+// signal — below this, a lucky/unlucky streak of 1-2 items would swing the
+// score too hard, so listening falls back to the same blended shape reading
+// uses until there's enough of a sample.
+const MIN_LISTENING_REPS = 3;
+
+// metrics: { masteredVocab, unitsComplete, unitsTotal, accuracy(0..1),
+//            conversationSessions, listeningAccuracy(0..1|null), listeningReps }
 export function estimateLevels(m) {
   const vocabComponent = clamp((m.masteredVocab || 0) / 1500, 0, 1);     // ~1500 mastered ≈ B1-ish recognition
   // Anchor to an absolute course size (~120 units ≈ a full A1–B1 path) so a
@@ -25,7 +32,15 @@ export function estimateLevels(m) {
 
   // Skill tilts: recognition is reached earlier than production.
   const reading = base * 1.05;
-  const listening = base * 0.95;
+  // Listening used to just be a blended-accuracy copy of reading (base *
+  // 0.95) with no signal of its own. Once there's a real sample of
+  // listening-dictation reps, swap the generic accuracy term for the
+  // listening-specific one so this skill actually reflects hearing German,
+  // not overall quiz performance.
+  const hasListeningSignal = m.listeningAccuracy != null && (m.listeningReps || 0) >= MIN_LISTENING_REPS;
+  const listeningAccuracyComponent = hasListeningSignal ? clamp(m.listeningAccuracy, 0, 1) : accuracyComponent;
+  const listeningBase = 100 * (0.55 * vocabComponent + 0.35 * courseComponent + 0.10 * listeningAccuracyComponent);
+  const listening = listeningBase * 0.95;
   const speaking = base * 0.88 + Math.min(8, (m.conversationSessions || 0) * 0.5);
 
   const overall = (reading + listening + speaking) / 3;

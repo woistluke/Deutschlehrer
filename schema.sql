@@ -64,7 +64,7 @@ create table if not exists progress (
   progress_id uuid primary key default gen_random_uuid(),
   user_id     text not null references app_users(user_id) on delete cascade,
   item_id     text not null,            -- vocab_id (uuid as text) or "grammar:<unit_id>:<name>"
-  item_type   text not null,            -- 'vocab' | 'grammar'
+  item_type   text not null,            -- 'vocab' | 'grammar' | 'listening' (aggregate dictation-accuracy row, item_id 'listening:aggregate')
   unit_id     uuid references units(unit_id) on delete cascade,
   times_seen    int  not null default 0,
   times_correct int  not null default 0,

@@ -26,13 +26,21 @@ export async function mountStats(el, ctx) {
   const accuracy = seen ? correct / seen : 0;
   const dueNow = progress.filter((p) => !p.next_due || new Date(p.next_due) <= new Date()).length;
 
+  // Listening-dictation accuracy (see recordListeningResult in runner.js) —
+  // a distinct signal from overall accuracy, feeding cefr.js's Listening
+  // skill instead of it reusing the blended reading/speaking figure.
+  const listeningRows = progress.filter((p) => p.item_type === 'listening');
+  const listeningReps = listeningRows.reduce((n, p) => n + (p.times_seen || 0), 0);
+  const listeningCorrect = listeningRows.reduce((n, p) => n + (p.times_correct || 0), 0);
+  const listeningAccuracy = listeningReps ? listeningCorrect / listeningReps : null;
+
   const sessionCount = sessions.length;
   const conversationSessions = sessions.filter((s) => s.mode !== 'review').length;
   const streak = dayStreak(sessions);
   const active = units.find((u) => u.status !== 'complete');
 
   // ---- CEFR estimate ----
-  const levels = estimateLevels({ masteredVocab, unitsComplete, unitsTotal, accuracy, conversationSessions });
+  const levels = estimateLevels({ masteredVocab, unitsComplete, unitsTotal, accuracy, conversationSessions, listeningAccuracy, listeningReps });
   const hpReadiness = readinessToward(levels.overall.score, 'B1');
 
   // ---- per-unit vocab breakdown (expand/collapse state lives for this mount) ----
