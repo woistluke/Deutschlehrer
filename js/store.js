@@ -645,14 +645,29 @@ export const createContentFeedback = (userId, fields) =>
 
 export const allContentFeedback = (userId) => selectWhere('content_feedback', { user_id: userId });
 
+// Every row is written with status 'open' (schema.sql: open | reviewed |
+// addressed) but until now nothing ever transitioned it out of 'open' or
+// filtered on it — recentFeedbackNotes ranked purely by recency, so a note
+// about a problem that's long since been fixed (in prompts.js, in seed.js,
+// wherever) would keep getting fed back into generation as a "known issue to
+// avoid" indefinitely. This marks a row resolved once its underlying content
+// issue has actually been addressed; no caller does so automatically yet, so
+// treat this as the hook for a future "mark reviewed" action (e.g. a small
+// admin affordance in Settings) rather than something wired to fire on its
+// own.
+export const resolveContentFeedback = (id, status = 'addressed') =>
+  update('content_feedback', 'content_feedback_id', id, { status });
+
 // Most recent N feedback notes for a given context (sentence_drill | quiz |
 // conjugation_match), formatted as short strings ready to drop into a
 // prompt. Takes the already-fetched full list rather than querying itself,
 // so callers that need multiple context types (e.g. runner.js wanting both
-// sentence_drill and quiz) only fetch once.
+// sentence_drill and quiz) only fetch once. Skips anything already marked
+// resolved (status !== 'open') so a fixed issue stops haunting every future
+// generation once it's been dealt with.
 export function recentFeedbackNotes(all, contextType, limit = 6) {
   return (all || [])
-    .filter((f) => f.context_type === contextType && f.note)
+    .filter((f) => f.context_type === contextType && f.note && (f.status || 'open') === 'open')
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     .slice(0, limit)
     .map((f) => (f.prompt_text ? `"${f.prompt_text}" — ${f.note}` : f.note));

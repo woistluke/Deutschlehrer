@@ -60,15 +60,37 @@ Gently correct the learner's real mistakes. Pay attention to umlaut spelling (e.
 ${STRUCTURED_FORMAT}`;
 }
 
+// Sections' `notes` field carries a CEFR sub-level tag authored in seed.js
+// (e.g. "A1.1 -- the absolute basics...", "B2.1 -- passive voice, formal
+// writing...", "A1.3 -> A2.1 -- describing your home..."). Extract the CEFR
+// band(s) mentioned and take the LAST one — the band the section is heading
+// toward — so a section spanning a range (e.g. "A1.3 -> A2.1") reads as the
+// more advanced end, matching "keep the German at or slightly above the
+// learner's level." Falls back to null when a section has no notes (e.g.
+// the due-review pseudo-unit, which has no real section behind it).
+const CEFR_BAND_RE = /\b(A1|A2|B1|B2|C1|C2)\b/g;
+function sectionLevel(sectionNotes) {
+  if (!sectionNotes) return null;
+  const matches = [...sectionNotes.matchAll(CEFR_BAND_RE)].map((m) => m[1]);
+  return matches.length ? matches[matches.length - 1] : null;
+}
+
 // Curriculum conversation phase — structured, like the free tab but grounded in
 // the active unit, plus review items from previous lessons and known weak points.
-// ctx = { unit, sectionTitle, reviewItems, weakPoints, vocabById, mode }
+// ctx = { unit, section, sectionTitle, reviewItems, weakPoints, vocabById, mode }
 export function buildUnitConvoPrompt(ctx) {
-  const { unit, sectionTitle, reviewItems = [], weakPoints = [], vocabById = {}, mode = 'curriculum' } = ctx;
+  const { unit, section, sectionTitle, reviewItems = [], weakPoints = [], vocabById = {}, mode = 'curriculum' } = ctx;
   const objectives = (unit?.objectives || []).join('; ');
   const grammar = (unit?.grammar_focus || []).join('; ');
+  // Grounded in THIS unit's actual section, not a fixed assumption — a
+  // hardcoded "A1-A2" here previously stayed put through the whole 40-unit
+  // curriculum, including late units whose grammar_focus is clearly B2/C1
+  // (passive voice, Konjunktiv I/II, indirect speech, advanced connectors),
+  // telling the tutor to keep things simple in exactly the phase meant to
+  // put that advanced material to use in real conversation.
+  const level = sectionLevel(section?.notes) || 'A1–A2';
 
-  return `You are a warm, encouraging German conversation tutor for an adult learner (Luke) at roughly A1–A2 level. You speak mostly in simple German, dropping into English only inside the "translation"/"tip" fields. Keep your German at or just slightly above the learner's level.
+  return `You are a warm, encouraging German conversation tutor for an adult learner (Luke), currently working at roughly ${level} level based on where this unit sits in the curriculum. You speak mostly in simple German, dropping into English only inside the "translation"/"tip" fields. Keep your German at or just slightly above ${level} — matching THIS unit's own grammar focus and vocabulary below, not a flatter beginner default.
 
 SESSION MODE: ${mode}
 CURRENT SECTION: ${sectionTitle || '—'}
@@ -95,29 +117,6 @@ HOW TO TEACH:
 ${STRUCTURED_FORMAT}
 
 Begin now with a natural greeting in German appropriate to the unit.`;
-}
-
-// Backwards-compatible plain-text tutor prompt (kept for any non-structured caller).
-export function buildTutorPrompt(ctx) {
-  const { unit, sectionTitle, reviewItems = [], weakPoints = [], vocabById = {}, mode = 'curriculum' } = ctx;
-  const objectives = (unit?.objectives || []).join('; ');
-  const grammar = (unit?.grammar_focus || []).join('; ');
-  return `You are a warm, encouraging German conversation tutor for an adult learner (Luke) at roughly A1–A2 level. You speak mostly in simple German, dropping into English only to explain or reassure.
-
-SESSION MODE: ${mode}
-CURRENT SECTION: ${sectionTitle || '—'}
-CURRENT UNIT: ${unit?.title || '—'}
-OBJECTIVES: ${objectives || '—'}
-GRAMMAR FOCUS: ${grammar || '—'}
-
-NEW VOCABULARY:
-${vocabLines(unit?.vocab || []) || '- (none)'}
-REVIEW ITEMS DUE:
-${reviewLines(reviewItems, vocabById) || '- (none)'}
-KNOWN WEAK POINTS:
-${weakLines(weakPoints, vocabById) || '- (none)'}
-
-Hold a real conversation, correct errors kindly inline, keep turns short, and begin now with a natural German greeting.`;
 }
 
 // Single-sentence practice generator (lesson phase 2). Produces ONE-sentence

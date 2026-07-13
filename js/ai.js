@@ -43,18 +43,6 @@ async function chatCompletion({ base, key, model, temperature, messages, jsonMod
   return data.choices?.[0]?.message?.content ?? '';
 }
 
-// Conversational tutor turn (plain text). `history` is an array of {role, content}.
-export async function tutorReply(systemPrompt, history) {
-  const s = getSettings();
-  return chatCompletion({
-    base: s.groqBase || DEFAULTS.groqBase,
-    key: s.groqKey,
-    model: s.tutorModel || DEFAULTS.tutorModel,
-    temperature: s.tutorTemperature ?? DEFAULTS.tutorTemperature,
-    messages: [{ role: 'system', content: systemPrompt }, ...history],
-  });
-}
-
 // Structured tutor turn — the tutor model returns JSON with reply, translation,
 // corrections, tip and vocab (the rich conversation format ported from the
 // original single-file app). Falls back to a plain reply object if the model

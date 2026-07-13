@@ -163,10 +163,21 @@ function buildUnitsMap(sections) {
   return map;
 }
 
+// unit_id -> section_id, so a vocab item (which only carries unit_id) can be
+// traced back to its section — used to scope the quick-recognition round's
+// wrong-answer options to the same section rather than the whole curriculum
+// (see buildRecognitionOptions below).
+function buildSectionByUnitMap(sections) {
+  const map = {};
+  sections.forEach((s) => s.units.forEach((u) => { map[u.unit_id] = s.section_id; }));
+  return map;
+}
+
 async function buildContext(unit, section, mode) {
   const sections = await store.getCurriculum(CTX.userId);
   const vocabById = buildVocabMap(sections);
   const unitsById = buildUnitsMap(sections);
+  const sectionByUnitId = buildSectionByUnitMap(sections);
   const [reviewItems, weakPoints, priorWeak, allFeedback] = await Promise.all([
     store.getDueReviewItems(CTX.userId),
     store.getWeakPoints(CTX.userId),
@@ -179,7 +190,7 @@ async function buildContext(unit, section, mode) {
   const pastSentenceIssues = store.recentFeedbackNotes(allFeedback, 'sentence_drill');
   const pastQuizIssues = store.recentFeedbackNotes(allFeedback, 'quiz');
   return {
-    unit, section, sectionTitle: section?.title, reviewItems, weakPoints, priorWeak, vocabById, unitsById, mode,
+    unit, section, sectionTitle: section?.title, reviewItems, weakPoints, priorWeak, vocabById, unitsById, sectionByUnitId, mode,
     pastSentenceIssues, pastQuizIssues,
   };
 }
@@ -207,10 +218,11 @@ async function startDueReview(sections) {
   if (!due.length) { alert('Nothing due right now — nicely done.'); return; }
   const vocabById = buildVocabMap(sections);
   const unitsById = buildUnitsMap(sections);
+  const sectionByUnitId = buildSectionByUnitMap(sections);
   const pseudoUnit = { title: 'Due review', objectives: ['refresh items due for review'], grammar_focus: [], vocab: due.map((p) => vocabById[p.item_id]).filter(Boolean) };
   const allFeedback = await store.allContentFeedback(CTX.userId).catch(() => []);
   sessionCtx = {
-    unit: pseudoUnit, section: null, sectionTitle: 'Review', reviewItems: due, weakPoints: [], priorWeak: [], vocabById, unitsById, mode: 'review',
+    unit: pseudoUnit, section: null, sectionTitle: 'Review', reviewItems: due, weakPoints: [], priorWeak: [], vocabById, unitsById, sectionByUnitId, mode: 'review',
     pastSentenceIssues: store.recentFeedbackNotes(allFeedback, 'sentence_drill'),
     pastQuizIssues: store.recentFeedbackNotes(allFeedback, 'quiz'),
   };
@@ -344,7 +356,7 @@ async function mountRecognitionStep(vocab) {
       return;
     }
     const v = newWords[qidx];
-    const options = buildRecognitionOptions(v, allVocab);
+    const options = buildRecognitionOptions(v, allVocab, sessionCtx.sectionByUnitId);
     zone.innerHTML = `
       <div class="card qcard">
         <div class="eyebrow">Phase 1 · Quick recognition · ${qidx + 1} of ${newWords.length}</div>
@@ -377,11 +389,21 @@ async function mountRecognitionStep(vocab) {
 
 // Distractors for the quick-recognition round: 3 other curriculum words with
 // a different English meaning than the correct one (so there's exactly one
-// right answer), pulled from the FULL curriculum vocab pool (not just this
-// lesson) so there's always enough to choose from.
-function buildRecognitionOptions(v, allVocab) {
+// right answer). Previously pulled from the FULL curriculum vocab pool
+// (all 40 units), which meant an early A1 word could get distractors lifted
+// from a C1 unit (idiom, advanced connectors) — so obviously mismatched in
+// register that they were never seriously considered, defeating the point of
+// a "does the learner actually recognize this" check. Scope to the word's
+// own SECTION first (sections are this curriculum's CEFR-sub-level grouping
+// — see seed.js), which keeps distractors at a plausible level; only widen
+// to the full pool if that section alone doesn't have enough candidates
+// (small sections, or the due-review pseudo-unit which has no section at all).
+function buildRecognitionOptions(v, allVocab, sectionByUnitId = {}) {
   const correctEn = (v.english || '').trim().toLowerCase();
-  const pool = allVocab.filter((x) => x.vocab_id !== v.vocab_id && x.german && x.english && x.english.trim().toLowerCase() !== correctEn);
+  const isCandidate = (x) => x.vocab_id !== v.vocab_id && x.german && x.english && x.english.trim().toLowerCase() !== correctEn;
+  const sectionId = sectionByUnitId?.[v.unit_id];
+  const sectionPool = sectionId ? allVocab.filter((x) => isCandidate(x) && sectionByUnitId?.[x.unit_id] === sectionId) : [];
+  const pool = sectionPool.length >= 3 ? sectionPool : allVocab.filter(isCandidate);
   const distractors = shuffle(pool).slice(0, 3);
   return shuffle([v, ...distractors]);
 }
