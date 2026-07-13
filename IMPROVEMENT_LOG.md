@@ -73,7 +73,7 @@ Review of everything added since the last logged pass: the Exercises tab, Verb C
 
 **Implemented as:** item 1 — dedupe by normalized `infinitive` (falling back to the source vocab's German text) before the `ROUND_SIZE` slice. Item 2 — added a dedicated aggregate progress row (`item_type: 'listening'`, `item_id: 'listening:aggregate'`) written independently of the per-vocab `item_label` mapping (dictation items test a whole heard sentence, not one word, so relying on label-resolution alone would undercount); `cefr.js` now swaps its blended-accuracy term for this listening-specific accuracy once there are ≥3 reps, falling back to blended accuracy before then to avoid a 1-2-item sample swinging the score. Item 3 — both `runner.js` error screens (sentence phase, quiz phase) and `conjugationMatch.js`'s now detect "Add it in Settings" and swap the dead-end "Try again" for a "Go to Settings" button. v1.0.0 → v1.0.1.
 
-## 2026-07-13 — proposed
+## 2026-07-13 — implemented (all 4 approved same-day, commit 0c1ffbb)
 
 Fresh pass focused on technical/pedagogical depth per Luke's standing preference. Checked every prior fix against current code first — the level-A1 tutor prompt hardcode below is new; everything else logged through 2026-07-12 (dedupe, listening→CEFR, key-error UX, softlock/threshold/orphan fixes, timeouts, double-submit guards, maintenance collapsing, blob URL revocation, free-conversation session logging) is confirmed present and working. No re-proposals.
 
