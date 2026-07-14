@@ -49,9 +49,14 @@ create table if not exists vocab (
   german     text not null,
   english    text not null,
   notes      text,                                    -- trouble notes, e.g. umlaut reminder
-  tags       jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now()
 );
+
+-- vocab.tags existed here through 2026-07-14 but had no writer beyond an
+-- empty default, no reader, and no editor UI -- dropped as dead schema
+-- surface (see IMPROVEMENT_LOG.md 2026-07-14 item 4). Safe/idempotent for
+-- databases provisioned before this change.
+alter table vocab drop column if exists tags;
 
 -- progress: one row per trackable item (vocab item or named grammar point).
 -- item_id is deliberately free text, not a FK to vocab(vocab_id) — it also

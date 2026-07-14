@@ -35,12 +35,34 @@ export async function mountStats(el, ctx) {
   const listeningAccuracy = listeningReps ? listeningCorrect / listeningReps : null;
 
   const sessionCount = sessions.length;
-  const conversationSessions = sessions.filter((s) => s.mode !== 'review').length;
+  // Previously one blended "Conversations" count (everything but review)
+  // fed both the Stats "Conversations" stat AND cefr.js's speaking bonus —
+  // so a learner who never opened Free Conversation still saw a
+  // "Conversations" number built entirely from curriculum lessons (see
+  // IMPROVEMENT_LOG.md 2026-07-14 item 3). Split by the sessions.mode values
+  // the schema actually defines (curriculum | review | free) so the label
+  // matches what's counted; cefr.js's speaking bonus deliberately still
+  // combines lessonSessions + freeSessions (curriculum lessons have their
+  // own conversation phase, so both are real speaking reps), just under an
+  // honestly-named variable instead of an overloaded "conversations" one.
+  const lessonSessions = sessions.filter((s) => s.mode === 'curriculum').length;
+  const freeSessions = sessions.filter((s) => s.mode === 'free').length;
+  const reviewSessions = sessions.filter((s) => s.mode === 'review').length;
+  const speakingPracticeSessions = lessonSessions + freeSessions;
   const streak = dayStreak(sessions);
   const active = units.find((u) => u.status !== 'complete');
 
+  // Recent sessions — what got introduced/reviewed and which error types came
+  // up, per session (sessions.items_introduced/items_reviewed/errors_observed,
+  // written by runner.js since 2026-07-11 but not surfaced anywhere until now —
+  // see IMPROVEMENT_LOG.md 2026-07-14 item 2).
+  const unitsById = Object.fromEntries(units.map((u) => [u.unit_id, u]));
+  const recentSessionsList = [...sessions]
+    .sort((a, b) => new Date(b.started_at) - new Date(a.started_at))
+    .slice(0, 8);
+
   // ---- CEFR estimate ----
-  const levels = estimateLevels({ masteredVocab, unitsComplete, unitsTotal, accuracy, conversationSessions, listeningAccuracy, listeningReps });
+  const levels = estimateLevels({ masteredVocab, unitsComplete, unitsTotal, accuracy, conversationSessions: speakingPracticeSessions, listeningAccuracy, listeningReps });
   const hpReadiness = readinessToward(levels.overall.score, 'B1');
 
   // ---- per-unit vocab breakdown (expand/collapse state lives for this mount) ----
@@ -93,13 +115,16 @@ export async function mountStats(el, ctx) {
 
       <div class="card">
         <h2>Habit</h2>
-        <div class="grid2" style="grid-template-columns:repeat(3,1fr)">
+        <div class="grid2" style="grid-template-columns:repeat(4,1fr)">
           ${stat(`${streak}🔥`, streak === 1 ? 'Day streak' : 'Day streak')}
-          ${stat(conversationSessions, 'Conversations')}
-          ${stat(sessionCount - conversationSessions, 'Review runs')}
+          ${stat(lessonSessions, 'Lessons')}
+          ${stat(freeSessions, 'Conversations')}
+          ${stat(reviewSessions, 'Review runs')}
         </div>
         <p class="muted" style="font-size:.85rem;margin-bottom:0">${active ? `Currently working on <b>${esc(active.title)}</b>.` : 'All units complete — add more in the editor or keep reviewing.'}</p>
       </div>
+
+      ${recentSessionsCard(recentSessionsList, unitsById)}
 
       ${unitsBreakdown(sections, progByItem, expandedUnits)}
     `;
@@ -138,6 +163,46 @@ function skillRow(label, lvl, strong) {
   </div>`;
 }
 const UNIT_STATUS_LABEL = { locked: 'Locked', available: 'Available', in_progress: 'In progress', complete: 'Complete' };
+
+const SESSION_MODE_LABEL = { curriculum: 'Lesson', review: 'Review', free: 'Conversation' };
+
+// Last few sessions with what each one introduced/reviewed and which error
+// types came up — the first real reader of items_introduced/items_reviewed/
+// errors_observed (see schema.sql, populated since 2026-07-11).
+function recentSessionsCard(sessions, unitsById) {
+  if (!sessions.length) return '';
+  const rows = sessions.map((s) => {
+    const modeLabel = SESSION_MODE_LABEL[s.mode] || s.mode;
+    const unitTitle = s.unit_id ? (unitsById[s.unit_id]?.title || null) : null;
+    const introduced = (s.items_introduced || []).length;
+    const reviewed = (s.items_reviewed || []).length;
+    const tally = errorTally(s.errors_observed);
+    const bits = [];
+    if (introduced) bits.push(`+${introduced} new`);
+    if (reviewed) bits.push(`${reviewed} reviewed`);
+    if (tally) bits.push(tally);
+    const dateStr = new Date(s.started_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return `<div class="row spread" style="padding:7px 0;border-bottom:1px solid var(--line)">
+      <span>
+        <b>${esc(modeLabel)}</b>${unitTitle ? ` <span class="muted">· ${esc(unitTitle)}</span>` : ''}
+        <span class="muted" style="font-size:.8rem"> · ${dateStr}</span>
+      </span>
+      <span class="muted" style="font-size:.8rem">${esc(bits.join(' · ') || '—')}</span>
+    </div>`;
+  }).join('');
+  return `<div class="card">
+    <h2>Recent sessions</h2>
+    <p class="muted" style="margin-top:0;font-size:.85rem">What each of your last ${sessions.length} sessions introduced, reviewed, and which error types came up.</p>
+    ${rows}
+  </div>`;
+}
+
+function errorTally(errors) {
+  if (!errors || !errors.length) return '';
+  const tally = {};
+  errors.forEach((e) => { if (e?.error_type && e.error_type !== 'none') tally[e.error_type] = (tally[e.error_type] || 0) + 1; });
+  return Object.entries(tally).map(([t, n]) => `${t}×${n}`).join(', ');
+}
 
 // Every section, every unit within it, expandable to the unit's vocab/phrases
 // with a mastered / learning / not-started status each — both a record of

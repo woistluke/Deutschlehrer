@@ -178,7 +178,7 @@ async function buildContext(unit, section, mode) {
   const vocabById = buildVocabMap(sections);
   const unitsById = buildUnitsMap(sections);
   const sectionByUnitId = buildSectionByUnitMap(sections);
-  const [reviewItems, weakPoints, priorWeak, allFeedback] = await Promise.all([
+  const [reviewItems, weakPoints, priorWeak, allFeedback, errorTrend] = await Promise.all([
     store.getDueReviewItems(CTX.userId),
     store.getWeakPoints(CTX.userId),
     mode === 'curriculum' ? store.getUnmasteredFromPriorUnits(CTX.userId, unit.unit_id) : Promise.resolve([]),
@@ -186,12 +186,16 @@ async function buildContext(unit, section, mode) {
     // schema not yet re-run for it) break session start — degrade to no
     // past-issues context instead.
     store.allContentFeedback(CTX.userId).catch(() => []),
+    // Cross-session error-type trend (see store.recentErrorTrend) — same
+    // "don't let this break session start" defensiveness as content
+    // feedback above.
+    store.recentErrorTrend(CTX.userId).catch(() => []),
   ]);
   const pastSentenceIssues = store.recentFeedbackNotes(allFeedback, 'sentence_drill');
   const pastQuizIssues = store.recentFeedbackNotes(allFeedback, 'quiz');
   return {
     unit, section, sectionTitle: section?.title, reviewItems, weakPoints, priorWeak, vocabById, unitsById, sectionByUnitId, mode,
-    pastSentenceIssues, pastQuizIssues,
+    pastSentenceIssues, pastQuizIssues, errorTrend,
   };
 }
 
@@ -220,11 +224,15 @@ async function startDueReview(sections) {
   const unitsById = buildUnitsMap(sections);
   const sectionByUnitId = buildSectionByUnitMap(sections);
   const pseudoUnit = { title: 'Due review', objectives: ['refresh items due for review'], grammar_focus: [], vocab: due.map((p) => vocabById[p.item_id]).filter(Boolean) };
-  const allFeedback = await store.allContentFeedback(CTX.userId).catch(() => []);
+  const [allFeedback, errorTrend] = await Promise.all([
+    store.allContentFeedback(CTX.userId).catch(() => []),
+    store.recentErrorTrend(CTX.userId).catch(() => []),
+  ]);
   sessionCtx = {
     unit: pseudoUnit, section: null, sectionTitle: 'Review', reviewItems: due, weakPoints: [], priorWeak: [], vocabById, unitsById, sectionByUnitId, mode: 'review',
     pastSentenceIssues: store.recentFeedbackNotes(allFeedback, 'sentence_drill'),
     pastQuizIssues: store.recentFeedbackNotes(allFeedback, 'quiz'),
+    errorTrend,
   };
   session = await store.createSession(CTX.userId, { mode: 'review', unit_id: null });
   phaseIdx = 0;

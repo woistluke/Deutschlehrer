@@ -3,8 +3,17 @@
 import { DEFAULTS, LS } from '../config.js';
 import * as store from '../store.js';
 
-export function mountSettings(el, ctx) {
+export async function mountSettings(el, ctx) {
   const s = ctx.settings;
+  // Open flag-an-issue notes (js/feedback.js -> content_feedback table) — see
+  // "Flagged content" card below. Never let this break Settings from loading.
+  const allFeedback = await store.allContentFeedback(ctx.userId).catch(() => []);
+  const openFeedback = allFeedback
+    .filter((f) => (f.status || 'open') === 'open')
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  render();
+
+  function render() {
   el.innerHTML = `
     <div class="page-head">
       <div class="eyebrow">Settings</div>
@@ -97,8 +106,31 @@ export function mountSettings(el, ctx) {
       </div>
       <pre id="set-merge-report" class="muted" style="margin-top:10px;white-space:pre-wrap"></pre>
     </div>
+
+    <div class="card">
+      <h2>Flagged content ${openFeedback.length ? `(${openFeedback.length} open)` : ''}</h2>
+      <p class="muted" style="margin-top:0">Questions/sentences you flagged with "⚑ Something wrong with this?" — these get read back into future generation as issues to avoid (see <code>prompts.js</code>) until marked resolved here. Mark one resolved once its underlying problem is actually fixed, so it stops being cited indefinitely.</p>
+      ${openFeedback.length ? `<div id="fb-list">${openFeedback.map(feedbackRow).join('')}</div>`
+        : `<p class="muted" style="font-size:.85rem">Nothing open — clean slate.</p>`}
+    </div>
     </details>
   `;
+
+  el.querySelectorAll('[data-resolve-fb]').forEach((btn) => {
+    btn.onclick = async () => {
+      const id = btn.getAttribute('data-resolve-fb');
+      btn.disabled = true; btn.textContent = 'Resolving…';
+      try {
+        await store.resolveContentFeedback(id);
+        const i = openFeedback.findIndex((f) => f.content_feedback_id === id);
+        if (i >= 0) openFeedback.splice(i, 1);
+        render();
+      } catch (e) {
+        btn.disabled = false; btn.textContent = 'Mark resolved';
+        alert('Could not resolve: ' + e.message);
+      }
+    };
+  });
 
   el.querySelector('#set-user-save').onclick = async () => {
     const u = el.querySelector('#set-user').value.trim().toLowerCase();
@@ -211,6 +243,20 @@ export function mountSettings(el, ctx) {
 
   function val(sel) { return el.querySelector(sel).value.trim(); }
   function numVal(sel) { return parseFloat(el.querySelector(sel).value); }
+  } // end render()
+}
+
+function feedbackRow(f) {
+  const when = new Date(f.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const ctxLabel = { sentence_drill: 'Sentence drill', quiz: 'Quiz', conjugation_match: 'Conjugation Match' }[f.context_type] || f.context_type;
+  return `<div class="row spread" style="padding:8px 0;border-bottom:1px solid var(--line);align-items:flex-start">
+    <div style="flex:1">
+      <div style="font-size:.8rem" class="muted">${esc(ctxLabel)}${f.unit_title ? ` · ${esc(f.unit_title)}` : ''} · ${when}</div>
+      ${f.prompt_text ? `<div style="margin:2px 0"><b>${esc(f.prompt_text)}</b></div>` : ''}
+      <div style="font-size:.88rem">${esc(f.note)}</div>
+    </div>
+    <button class="btn ghost sm" data-resolve-fb="${esc(f.content_feedback_id)}" style="flex-shrink:0;margin-left:10px">Mark resolved</button>
+  </div>`;
 }
 
 function esc(v) { return (v ?? '').toString().replace(/"/g, '&quot;'); }

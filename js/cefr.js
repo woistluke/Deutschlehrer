@@ -21,6 +21,10 @@ const MIN_LISTENING_REPS = 3;
 
 // metrics: { masteredVocab, unitsComplete, unitsTotal, accuracy(0..1),
 //            conversationSessions, listeningAccuracy(0..1|null), listeningReps }
+// conversationSessions is curriculum-lesson sessions + Free Conversation
+// sessions combined (see pages/stats.js's speakingPracticeSessions) —
+// deliberately not free-conversation-only, since a curriculum lesson's own
+// conversation phase (phase 3) is real spoken production too.
 export function estimateLevels(m) {
   const vocabComponent = clamp((m.masteredVocab || 0) / 1500, 0, 1);     // ~1500 mastered ≈ B1-ish recognition
   // Anchor to an absolute course size (~120 units ≈ a full A1–B1 path) so a

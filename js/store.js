@@ -149,7 +149,7 @@ export async function deleteUnit(id) {
 export const createVocab = (userId, fields) =>
   insert('vocab', {
     user_id: userId, unit_id: fields.unit_id, german: fields.german,
-    english: fields.english, notes: fields.notes || null, tags: fields.tags || [],
+    english: fields.english, notes: fields.notes || null,
   });
 export const updateVocab = (id, patch) => update('vocab', 'vocab_id', id, patch);
 export async function deleteVocab(id) {
@@ -179,6 +179,29 @@ export const recentSessions = async (userId, n = 10) => {
   return rows.sort((a, b) => new Date(b.started_at) - new Date(a.started_at)).slice(0, n);
 };
 export const allSessions = (userId) => selectWhere('sessions', { user_id: userId });
+
+// Cross-session error-type trend, aggregated from sessions.errors_observed
+// (written per graded answer by runner.js's recordResult/endSession — see
+// schema.sql). This is a different signal than a single vocab row's
+// known_errors: known_errors answers "what's wrong with THIS word,"
+// while this answers "what's Luke been getting wrong lately, in general" —
+// so prompts.js can bias fresh generation toward a recurring weak spot
+// (e.g. a run of umlaut misses) even for words that don't individually look
+// shaky yet. Previously this data was written every session and never read
+// anywhere (see IMPROVEMENT_LOG.md 2026-07-14 item 2).
+export async function recentErrorTrend(userId, sessionLimit = 10, topN = 3) {
+  const sessions = await recentSessions(userId, sessionLimit);
+  const tally = {};
+  sessions.forEach((s) => (s.errors_observed || []).forEach((e) => {
+    const t = e?.error_type;
+    if (!t || t === 'none') return;
+    tally[t] = (tally[t] || 0) + 1;
+  }));
+  return Object.entries(tally)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, topN)
+    .map(([type, count]) => ({ type, count }));
+}
 
 // ---- composite reads ------------------------------------------------------
 // Full nested curriculum: [{...section, units:[{...unit, vocab:[...]}]}]

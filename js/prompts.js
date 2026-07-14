@@ -33,6 +33,17 @@ function pastIssuesBlock(issues) {
   return `\nLEARNER-FLAGGED ISSUES FROM PAST QUESTIONS — real feedback, not examples to imitate. Do not repeat these specific problems (too advanced for the level, vague/unclear, wrong, etc.):\n${issues.map((n) => `- ${n}`).join('\n')}\n`;
 }
 
+// Cross-session error-type trend (see store.recentErrorTrend) — distinct
+// from a single item's known_errors: this is "what's been going wrong
+// lately, in general" rather than "what's wrong with this one word." Used
+// to bias fresh sentence/quiz/conversation generation toward exercising a
+// recurring weak spot even when the specific words involved don't
+// individually look shaky yet.
+function errorTrendBlock(trend) {
+  if (!trend || !trend.length) return '';
+  return `\nRECENT ERROR TREND — across Luke's last several sessions, these error types have come up repeatedly: ${trend.map((t) => `${t.type} (${t.count}x)`).join(', ')}. Where it fits naturally, lean at least one item toward exercising this.\n`;
+}
+
 // The structured conversation format — shared by the free-practice tab and the
 // curriculum conversation phase. The tutor model returns JSON the UI renders as
 // reply + translation + inline corrections + tip + vocab chips.
@@ -79,7 +90,7 @@ function sectionLevel(sectionNotes) {
 // the active unit, plus review items from previous lessons and known weak points.
 // ctx = { unit, section, sectionTitle, reviewItems, weakPoints, vocabById, mode }
 export function buildUnitConvoPrompt(ctx) {
-  const { unit, section, sectionTitle, reviewItems = [], weakPoints = [], vocabById = {}, mode = 'curriculum' } = ctx;
+  const { unit, section, sectionTitle, reviewItems = [], weakPoints = [], vocabById = {}, mode = 'curriculum', errorTrend = [] } = ctx;
   const objectives = (unit?.objectives || []).join('; ');
   const grammar = (unit?.grammar_focus || []).join('; ');
   // Grounded in THIS unit's actual section, not a fixed assumption — a
@@ -106,7 +117,7 @@ ${reviewLines(reviewItems, vocabById) || '- (none)'}
 
 KNOWN WEAK POINTS TO DELIBERATELY PROBE (Luke has struggled with these — create natural openings to test them):
 ${weakLines(weakPoints, vocabById) || '- (none)'}
-
+${errorTrendBlock(errorTrend)}
 HOW TO TEACH:
 - Hold a real back-and-forth conversation on the unit's topic. Ask questions; wait for answers.
 - Combine this lesson's new vocabulary with concepts from earlier lessons (the review items above).
@@ -122,7 +133,7 @@ Begin now with a natural greeting in German appropriate to the unit.`;
 // Single-sentence practice generator (lesson phase 2). Produces ONE-sentence
 // drills mixing English→German, German→English, and respond-in-German.
 export function buildSentencePrompt(ctx) {
-  const { unit, priorWeak = [], pastSentenceIssues = [] } = ctx;
+  const { unit, priorWeak = [], pastSentenceIssues = [], errorTrend = [] } = ctx;
   const pool = (unit?.vocab || []).map((v) => `${v.german} — ${v.english}${v.notes ? `  (note: ${v.notes})` : ''}`);
   const priorPool = priorWeak.map((v) => `${v.german} — ${v.english}${v.notes ? `  (note: ${v.notes})` : ''}`);
   const grammarFocus = (unit?.grammar_focus || []).join('; ');
@@ -137,7 +148,7 @@ Use these five types:
 Make exactly ONE of the 5 items type "word_order" and exactly ONE type "listen_type" (this unit's grammar focus below is a good source for both, when there is one); mix the remaining three roughly evenly across en_to_de/de_to_en/respond_de.
 
 Use the lesson vocabulary wherever it fits. Keep the language at the level implied by this unit's grammar focus and vocabulary below — don't default to simple present-tense sentences if the grammar focus below calls for something else (a past-tense unit's drills should be in the past tense, etc).
-${pastIssuesBlock(pastSentenceIssues)}${grammarFocus ? `
+${pastIssuesBlock(pastSentenceIssues)}${errorTrendBlock(errorTrend)}${grammarFocus ? `
 THIS UNIT'S GRAMMAR FOCUS — build AT LEAST 1-2 of the 5 items to specifically exercise this, not just the vocabulary (e.g. a Perfekt-tense focus should produce a Perfekt-tense sentence; a word-order focus should require the correct word order to answer correctly):
 ${grammarFocus}
 ` : ''}${priorPool.length ? `
@@ -182,7 +193,7 @@ function poolLine(v) {
 // Quiz/grader prompt. stage 'generate' produces questions; stage 'grade'
 // evaluates an answer leniently — see below.
 export function buildQuizPrompt(ctx, stage) {
-  const { unit, reviewItems = [], weakPoints = [], priorWeak = [], vocabById = {}, pastQuizIssues = [] } = ctx;
+  const { unit, reviewItems = [], weakPoints = [], priorWeak = [], vocabById = {}, pastQuizIssues = [], errorTrend = [] } = ctx;
   const priorLines = priorWeak.map(poolLine);
   const restLines = [
     ...(unit?.vocab || []).map(poolLine),
@@ -200,7 +211,7 @@ export function buildQuizPrompt(ctx, stage) {
 
   if (stage === 'generate') {
     return `You are a German quiz generator. Build a short mixed quiz (5–7 items) from the item pool below. Mix directions: some German→English, some English→German, at least one fill-in-the-blank sentence, and at least one that targets a known weak point.
-${pastIssuesBlock(pastQuizIssues)}${grammarFocus ? `
+${pastIssuesBlock(pastQuizIssues)}${errorTrendBlock(errorTrend)}${grammarFocus ? `
 THIS UNIT'S GRAMMAR FOCUS — make sure AT LEAST 1-2 questions specifically test this, not just vocabulary recall (e.g. a Perfekt-tense focus should have a question that requires the correct Perfekt form; a word-order focus should require the correct order to answer correctly):
 ${grammarFocus}
 ` : ''}${priorLines.length ? `
