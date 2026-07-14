@@ -85,7 +85,7 @@ Fresh pass focused on technical/pedagogical depth per Luke's standing preference
 
 4. **Cleanup: `content_feedback.status` is written but never read.** `createContentFeedback` (`js/store.js`) always writes `status: 'open'`, and the schema/comments imply an open/resolved workflow, but nothing anywhere ever transitions a row out of `'open'` or filters on status — `recentFeedbackNotes` ranks purely by recency. Harmless today since the recency cap (6 most-recent notes) already bounds prompt bloat, but the field currently implies a triage workflow that doesn't exist. Either wire up marking old notes resolved once the underlying content issue is fixed, or drop the field. Effort: trivial. Files: `js/store.js`, `schema.sql`.
 
-## 2026-07-14 — implemented (all 4 approved same-day, commit PLACEHOLDER)
+## 2026-07-14 — implemented (all 4 approved same-day, commit bc2a6ba)
 
 Fresh pass, technical/pedagogical focus per Luke's standing preference. Checked prior fixes against current code first: level-aware tutor prompt, section-scoped recognition distractors, dead tutorReply/buildTutorPrompt removal, and the content_feedback status filter are all present and working. Verified via a scripted scan of `seed.js` that the vocab-dedup/combined-vocab work has held — 0 duplicate German terms across all 40 units, every unit has non-empty `grammar_focus`/`objectives`, all ≥8 vocab items, and every section's `notes` still carries a parseable CEFR band. No re-proposals; today's items are new gaps found in the feedback/telemetry plumbing and one stats mislabel.
 
