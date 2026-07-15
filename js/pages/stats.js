@@ -62,7 +62,7 @@ export async function mountStats(el, ctx) {
     .slice(0, 8);
 
   // ---- CEFR estimate ----
-  const levels = estimateLevels({ masteredVocab, unitsComplete, unitsTotal, accuracy, conversationSessions: speakingPracticeSessions, listeningAccuracy, listeningReps });
+  const levels = estimateLevels({ masteredVocab, vocabTotal, unitsComplete, unitsTotal, accuracy, conversationSessions: speakingPracticeSessions, listeningAccuracy, listeningReps });
   const hpReadiness = readinessToward(levels.overall.score, 'B1');
 
   // ---- per-unit vocab breakdown (expand/collapse state lives for this mount) ----
@@ -89,7 +89,7 @@ export async function mountStats(el, ctx) {
 
       <div class="card">
         <h2>Estimated level</h2>
-        <p class="muted" style="margin-top:0;font-size:.85rem">A rough gauge from your activity — vocabulary mastered, units completed, and quiz accuracy. Not a substitute for a real placement test.</p>
+        <p class="muted" style="margin-top:0;font-size:.85rem">A rough gauge of how much of <b>this curriculum</b> you've mastered, mapped onto CEFR-shaped bands — not an externally validated placement test. 100% here means finishing everything Auf Deutsch currently teaches, which is a smaller vocabulary than a real CEFR exam at the higher bands would expect.</p>
         ${skillRow('Reading', levels.reading)}
         ${skillRow('Listening', levels.listening)}
         ${skillRow('Speaking', levels.speaking)}

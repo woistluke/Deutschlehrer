@@ -2,6 +2,26 @@
 // not a placement test: it reads vocabulary mastered, course progress, and
 // quiz accuracy, and weights the three skills differently (reading leans on
 // recognition, speaking on production). Treat it as a motivating gauge.
+//
+// What "100%" means here (see IMPROVEMENT_LOG.md 2026-07-15, item 1):
+// vocabComponent/courseComponent are scaled against THIS APP'S OWN current
+// curriculum size (vocabTotal, unitsTotal below) — a relative "how much of
+// what Auf Deutsch teaches have you mastered" gauge, mapped onto CEFR-shaped
+// bands. It is deliberately NOT rescaled to externally-published CEFR
+// vocabulary-size benchmarks (rough published estimates: A1≈750, A2≈1250,
+// B1≈2750, B2≈4500, C1≈9000 cumulative words) — Auf Deutsch's curriculum
+// (645 words / 40 units as of writing) is well short of those, especially
+// at the B2/C1 end, so "100% of the curriculum" reading as "C1" on this
+// gauge is a claim about finishing this app's content, not an external,
+// exam-calibrated placement. Luke chose this relative framing over
+// recalibrating to the external benchmarks (which would show a lower,
+// more conservative number today, likely capping around A2) — see the
+// log entry for the tradeoff. Previously this used fixed absolute anchors
+// (1500 words, 120 units) sized for a much bigger hypothetical course than
+// the one that actually exists, which meant 100% completion of the REAL
+// curriculum could never clear band B1 no matter how much was mastered —
+// an internal inconsistency, independent of which external framing is
+// preferred, that this rescaling fixes.
 
 const BANDS = ['A1', 'A2', 'B1', 'B2', 'C1'];
 
@@ -19,17 +39,19 @@ function toBand(score) {
 // uses until there's enough of a sample.
 const MIN_LISTENING_REPS = 3;
 
-// metrics: { masteredVocab, unitsComplete, unitsTotal, accuracy(0..1),
+// metrics: { masteredVocab, vocabTotal, unitsComplete, unitsTotal, accuracy(0..1),
 //            conversationSessions, listeningAccuracy(0..1|null), listeningReps }
 // conversationSessions is curriculum-lesson sessions + Free Conversation
 // sessions combined (see pages/stats.js's speakingPracticeSessions) —
 // deliberately not free-conversation-only, since a curriculum lesson's own
 // conversation phase (phase 3) is real spoken production too.
 export function estimateLevels(m) {
-  const vocabComponent = clamp((m.masteredVocab || 0) / 1500, 0, 1);     // ~1500 mastered ≈ B1-ish recognition
-  // Anchor to an absolute course size (~120 units ≈ a full A1–B1 path) so a
-  // tiny finished curriculum can't, on its own, imply a high level.
-  const courseComponent = clamp((m.unitsComplete || 0) / 120, 0, 1);
+  // Scaled against the curriculum's OWN current size, not a fixed absolute —
+  // see the file header for what that does and doesn't mean. Falls back to
+  // a denominator of 1 (not 0) so an empty/unseeded curriculum can't divide
+  // by zero; masteredVocab/unitsComplete would be 0 in that case anyway.
+  const vocabComponent = clamp((m.masteredVocab || 0) / Math.max(1, m.vocabTotal || 0), 0, 1);
+  const courseComponent = clamp((m.unitsComplete || 0) / Math.max(1, m.unitsTotal || 0), 0, 1);
   const accuracyComponent = clamp(m.accuracy || 0, 0, 1);
 
   const base = 100 * (0.55 * vocabComponent + 0.35 * courseComponent + 0.10 * accuracyComponent);
