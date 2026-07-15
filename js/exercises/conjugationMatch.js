@@ -176,11 +176,20 @@ export async function mount(el, ctx) {
   }
 }
 
-// Candidate verb vocab: either a bare infinitive dictionary entry ("brauchen
-// — to need" — rare in this curriculum) or, far more commonly here, a
-// first-person example phrase ("Ich brauche — I need"). This is a loose,
-// cheap client-side pre-filter; the LLM call in mount() does the real work
-// of confirming it's actually a single conjugatable verb and skips it
+// Candidate verb vocab: a first-person example phrase ("Ich brauche — I
+// need") OR any entry whose English gloss is an infinitive ("to ..."),
+// regardless of how many German words it takes to say it — a bare
+// dictionary infinitive ("brauchen — to need", rare in this curriculum) or,
+// just as often, a multi-word infinitive phrase (reflexive "sich duschen —
+// to shower", separable/particle "spazieren gehen — to go for a walk",
+// "Rad fahren — to ride a bike", noun-object "ein Ticket kaufen — to buy a
+// ticket"). Previously this only matched single-word bare infinitives or
+// "ich ..." phrases, silently excluding every multi-word "to ..." entry —
+// about 48 of 645 seed vocab rows, mostly common reflexive/separable verbs —
+// even though the LLM call below is already written to handle exactly this
+// (it explicitly strips trailing complements like "gern"/"aus"). This is a
+// loose, cheap client-side pre-filter; the LLM call in mount() does the real
+// work of confirming it's actually a single conjugatable verb and skips it
 // otherwise, so a false positive here just gets dropped, not shown wrong.
 // "Introduced" = has a progress row with times_seen > 0, the same "seen"
 // convention pages/runner.js uses (see mountRecognitionStep there).
@@ -193,9 +202,9 @@ async function pickIntroducedVerbs(userId) {
   sections.forEach((s) => s.units.forEach((u) => (u.vocab || []).forEach((v) => {
     if (!v.german || !v.english) return;
     const g = v.german.trim();
-    const isBareInfinitive = /^[a-zäöüß]+(en|ln|rn)$/i.test(g) && /^to\s+/i.test(v.english.trim());
+    const isInfinitivePhrase = /^to\s+/i.test(v.english.trim());
     const isFirstPersonPhrase = /^ich\s+\S+/i.test(g);
-    if (!isBareInfinitive && !isFirstPersonPhrase) return;
+    if (!isInfinitivePhrase && !isFirstPersonPhrase) return;
     if ((progByItem[v.vocab_id]?.times_seen || 0) <= 0) return;
     candidates.push(v);
   })));

@@ -60,7 +60,15 @@ function sectionEl(sec, si, total) {
   };
   wrap.querySelector('[data-act="add-unit"]').onclick = async () => {
     const t = prompt('New unit title:'); if (!t) return;
-    await store.createUnit(CTX.userId, { section_id: sec.section_id, title: t, position: sec.units.length, status: 'available' });
+    // No status override here — let it fall back to store.createUnit's own
+    // 'locked' default (matching how seedCurriculum creates every non-first
+    // unit). 'locked' isn't purely cosmetic: getUnmasteredFromPriorUnits
+    // treats any non-'locked' unit as already-reached and folds its vocab
+    // into later units' priority-review pool, so a stub forced to
+    // 'available' out of the normal end-of-section append order could feed
+    // premature/empty vocab into that pool. Luke can still flip status
+    // manually in the unit editor's Status field once it's actually ready.
+    await store.createUnit(CTX.userId, { section_id: sec.section_id, title: t, position: sec.units.length });
     render();
   };
   wrap.querySelector('[data-act="del"]').onclick = async () => {
