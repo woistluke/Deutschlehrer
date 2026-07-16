@@ -17,7 +17,7 @@ export function escapeHtml(s) {
 // UI needs to tear down and recreate the DOM node — such as leaving/returning
 // from the flashcards screen — without losing the chat so far or re-sending
 // an opening greeting).
-export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, placeholder = 'Schreib auf Deutsch…', initialMessages = null }) {
+export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, onCorrections = () => {}, placeholder = 'Schreib auf Deutsch…', initialMessages = null }) {
   let messages = initialMessages ? initialMessages.slice() : [];   // rich: {role, content, translation, corrections, tip, vocab}
   let vocab = [];      // de-duped collected vocab [{de,en}]
   let loading = false;
@@ -59,6 +59,14 @@ export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, placeh
       collectVocab();
       paint();
       if (p.reply) say(p.reply);
+      // Notify the host page of this turn's corrections (fresh per-turn, not
+      // deduped/aggregated across the conversation the way collectVocab()
+      // does for vocab chips — each correction is a distinct mistake
+      // instance worth its own record). Only the curriculum conversation
+      // phase currently wires this up (see runner.js) to feed SRS/error
+      // trend; Free Conversation leaves it as the no-op default since it's
+      // explicitly no-scoring practice.
+      if (p.corrections && p.corrections.length) onCorrections(p.corrections);
     } catch (e) {
       messages.push({ role: 'tutor', content: `⚠️ ${e.message}`, corrections: [], vocab: [] });
       paint();

@@ -109,9 +109,10 @@ export function mount(el, ctx) {
   // Stats since streak/session counts key off started_at, not ended_at).
   function endConversationSession() {
     if (!sessionId) return;
-    store.updateSession(sessionId, { ended_at: new Date().toISOString(), outcome: 'in_progress' })
-      .catch((e) => console.error('Failed to close conversation session:', e));
+    const id = sessionId;
     sessionId = null;
+    return store.updateSession(id, { ended_at: new Date().toISOString(), outcome: 'in_progress' })
+      .catch((e) => console.error('Failed to close conversation session:', e));
   }
 
   // ---- chat -----------------------------------------------------------------
@@ -238,4 +239,12 @@ export function mount(el, ctx) {
   }
 
   rerender();
+
+  // Unmount hook consumed by app.js's navigate() (via exercises.js, which
+  // tracks whichever standalone exercise is currently active — see there).
+  // Leaving Free Conversation via a top-nav click instead of "Change topic"/
+  // "← Exercises" previously left the session row open forever (see
+  // IMPROVEMENT_LOG.md 2026-07-16 item 3); this makes sure it still gets
+  // closed out in that case.
+  return () => endConversationSession();
 }

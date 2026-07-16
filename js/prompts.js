@@ -87,10 +87,16 @@ function sectionLevel(sectionNotes) {
 }
 
 // Curriculum conversation phase — structured, like the free tab but grounded in
-// the active unit, plus review items from previous lessons and known weak points.
-// ctx = { unit, section, sectionTitle, reviewItems, weakPoints, vocabById, mode }
+// the active unit, plus review items from previous lessons, known weak points,
+// and unmastered stragglers from earlier units (priorWeak — see
+// store.getUnmasteredFromPriorUnits). priorWeak was previously only threaded
+// into buildSentencePrompt/buildQuizPrompt, leaving the conversation phase —
+// arguably the best venue to organically reuse an older shaky word in a
+// natural sentence rather than a forced drill — blind to this pool entirely
+// (see IMPROVEMENT_LOG.md 2026-07-16 item 2).
+// ctx = { unit, section, sectionTitle, reviewItems, weakPoints, priorWeak, vocabById, mode }
 export function buildUnitConvoPrompt(ctx) {
-  const { unit, section, sectionTitle, reviewItems = [], weakPoints = [], vocabById = {}, mode = 'curriculum', errorTrend = [] } = ctx;
+  const { unit, section, sectionTitle, reviewItems = [], weakPoints = [], priorWeak = [], vocabById = {}, mode = 'curriculum', errorTrend = [] } = ctx;
   const objectives = (unit?.objectives || []).join('; ');
   const grammar = (unit?.grammar_focus || []).join('; ');
   // Grounded in THIS unit's actual section, not a fixed assumption — a
@@ -117,10 +123,13 @@ ${reviewLines(reviewItems, vocabById) || '- (none)'}
 
 KNOWN WEAK POINTS TO DELIBERATELY PROBE (Luke has struggled with these — create natural openings to test them):
 ${weakLines(weakPoints, vocabById) || '- (none)'}
+
+STRAGGLERS FROM EARLIER UNITS (not yet mastered — look for a natural opening to use at least one or two of these too, so old material keeps getting closing-the-gap reps, not just this unit's new words):
+${vocabLines(priorWeak) || '- (none)'}
 ${errorTrendBlock(errorTrend)}
 HOW TO TEACH:
 - Hold a real back-and-forth conversation on the unit's topic. Ask questions; wait for answers.
-- Combine this lesson's new vocabulary with concepts from earlier lessons (the review items above).
+- Combine this lesson's new vocabulary with concepts from earlier lessons (the review items and stragglers above).
 - Correct real errors inline via the "corrections" field; keep "reply" flowing.
 - Pay special attention to umlaut spelling (möchte vs mochte) and the wo/woher/wohin distinction — persistent issues.
 - Keep turns short.

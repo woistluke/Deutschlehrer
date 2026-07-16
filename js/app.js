@@ -20,6 +20,12 @@ const PAGES = {
 
 let ctx = null;
 let current = 'runner';
+// Cleanup returned by the currently-mounted page's mount() fn, if any (see
+// navigate() below). Pages that open something worth closing out when the
+// learner clicks away — a curriculum session, a Free Conversation session —
+// return a cleanup function from mount(); pages with nothing to close out
+// just return undefined, same as before this existed.
+let currentUnmount = null;
 
 function loadSettings() {
   let s = {};
@@ -71,12 +77,24 @@ function renderShell() {
 }
 
 async function navigate(page) {
+  // Give the outgoing page a chance to close out anything it opened (e.g. a
+  // curriculum lesson or Free Conversation session row left "in_progress")
+  // before its DOM is torn down. Previously navigate() just overwrote
+  // view.innerHTML directly with no lifecycle hook at all, so clicking a
+  // top-nav tab mid-lesson/mid-chat (rather than using the in-page "End
+  // session"/"Change topic" button) silently abandoned that session row
+  // forever — see IMPROVEMENT_LOG.md 2026-07-16 item 3.
+  if (currentUnmount) {
+    try { await currentUnmount(); } catch (e) { console.error('Page unmount cleanup failed:', e); }
+    currentUnmount = null;
+  }
+
   current = page;
   document.querySelectorAll('#nav button').forEach((b) =>
     b.classList.toggle('active', b.dataset.page === page));
   const view = document.getElementById('view');
   view.innerHTML = '';
-  await PAGES[page].mount(view, ctx);
+  currentUnmount = (await PAGES[page].mount(view, ctx)) || null;
 }
 
 boot().catch((e) => {

@@ -90,6 +90,10 @@ async function unitMasteryStats(unit) {
 export async function mountRunner(el, ctx) {
   CTX = ctx; ROOT = el;
   await renderLanding();
+  // Unmount hook consumed by app.js's navigate() — see closeActiveSessionRow
+  // above for why this exists. Best-effort: a failure here shouldn't block
+  // navigating away, just log it.
+  return () => closeActiveSessionRow().catch((e) => console.error('Failed to close session on navigate-away:', e));
 }
 
 async function renderLanding() {
@@ -670,9 +674,68 @@ function mountConvoPhase() {
   convo = createRichChat(zone.querySelector('#convo-rich'), {
     getSystemPrompt: () => buildUnitConvoPrompt(sessionCtx),
     placeholder: 'Type in German…',
+    onCorrections: recordConvoCorrections,
   });
   convo.open('Begin the conversation now with a natural German greeting tied to this unit.');
   zone.querySelector('#convo-continue').onclick = nextPhase;
+}
+
+// The conversation phase is explicitly prompted (see buildUnitConvoPrompt's
+// "KNOWN WEAK POINTS TO DELIBERATELY PROBE") to test known weak points in
+// real back-and-forth — but until now, whether a probe succeeded or failed
+// went nowhere: chatui.js only ever rendered the tutor's "corrections" array,
+// never fed it back to SRS/progress the way graded sentence/quiz answers are
+// via recordResult(). This is the conversation-phase counterpart to
+// recordResult: for each { wrong, right, note } correction the tutor
+// returns, resolve it back to a specific vocab item when possible (same
+// longest-match heuristic as resolveVocabByLabel) and log it as a miss —
+// nudging that word's mastery down and adding to its known_errors, exactly
+// as a wrong quiz answer would. When a correction doesn't map to any single
+// vocab item (e.g. a general word-order slip spanning the whole sentence),
+// it still counts toward this session's errors_observed so recentErrorTrend
+// picks it up, just without a specific item to dock (see
+// IMPROVEMENT_LOG.md 2026-07-16 item 1).
+async function recordConvoCorrections(corrections) {
+  for (const c of corrections || []) {
+    const errorType = inferCorrectionErrorType(c.wrong, c.right);
+    const label = ((c.right || c.wrong || '') + '').toLowerCase();
+    const vocab = label ? resolveVocabByLabel(label, sessionCtx.vocabById) : null;
+
+    if (!vocab) {
+      sessionLog.errors.push({ item_id: null, error_type: errorType });
+      continue;
+    }
+
+    const itemId = vocab.vocab_id;
+    const existing = (await store.getProgress(CTX.userId, itemId)) || {};
+    const upd = applyAnswer(existing, false);
+    const known = new Set(existing.known_errors || []);
+    known.add(errorType);
+    await store.upsertProgress(CTX.userId, itemId, {
+      item_type: 'vocab', unit_id: vocab.unit_id, known_errors: [...known], ...upd,
+    });
+    if ((existing.times_seen || 0) > 0) sessionLog.reviewed.add(itemId);
+    else sessionLog.introduced.add(itemId);
+    sessionLog.errors.push({ item_id: itemId, error_type: errorType });
+  }
+}
+
+// Cheap heuristic classifier for a conversation correction — there's no
+// grader model call here (that would mean an extra API round-trip per
+// correction, on top of the one the tutor turn itself already made), so this
+// mirrors the same error_type vocabulary the quiz/sentence graders use
+// (spelling|umlaut|vocab|grammar) with simple string comparison: an umlaut-
+// only difference is tagged 'umlaut'; a single-word, near-same-length swap is
+// tagged 'spelling'; anything else (word added/removed/reordered, wrong verb
+// form, etc.) falls back to 'grammar', the safest general bucket.
+function inferCorrectionErrorType(wrong, right) {
+  const w = (wrong || '').trim(), r = (right || '').trim();
+  if (!w || !r) return 'grammar';
+  const stripUmlaut = (s) => s.toLowerCase().replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/ß/g, 'ss');
+  if (stripUmlaut(w) === stripUmlaut(r) && w.toLowerCase() !== r.toLowerCase()) return 'umlaut';
+  const wWords = w.split(/\s+/), rWords = r.split(/\s+/);
+  if (wWords.length === 1 && rWords.length === 1 && Math.abs(w.length - r.length) <= 2) return 'spelling';
+  return 'grammar';
 }
 
 // ---- Phase 4: quiz ---------------------------------------------------------
@@ -899,16 +962,30 @@ async function maybePromote(unit) {
   return true;
 }
 
+// Persists the active session row's close-out fields (ended_at/outcome/
+// telemetry), if there is one. Split out from endSession() so the unmount
+// cleanup returned by mountRunner (see below, and app.js's navigate()) can
+// do the same persistence when the learner leaves Today via the top nav
+// instead of the in-page "End session" button — previously that left the
+// session row stuck at its insert-time defaults forever (outcome
+// 'in_progress', no ended_at, empty items_introduced/items_reviewed/
+// errors_observed), even though every graded answer up to that point had
+// already written its own progress row live (see IMPROVEMENT_LOG.md
+// 2026-07-16 item 3). Reads `session`/`sessionLog`/`lastOutcome` fresh at
+// call time, so it's safe to call from a closure captured once at mount.
+async function closeActiveSessionRow() {
+  if (!session) return;
+  await store.updateSession(session.session_id, {
+    ended_at: new Date().toISOString(),
+    outcome: lastOutcome,
+    items_introduced: [...sessionLog.introduced],
+    items_reviewed: [...sessionLog.reviewed],
+    errors_observed: sessionLog.errors,
+  });
+}
+
 async function endSession() {
-  if (session) {
-    await store.updateSession(session.session_id, {
-      ended_at: new Date().toISOString(),
-      outcome: lastOutcome,
-      items_introduced: [...sessionLog.introduced],
-      items_reviewed: [...sessionLog.reviewed],
-      errors_observed: sessionLog.errors,
-    });
-  }
+  await closeActiveSessionRow();
   await renderLanding();
 }
 
