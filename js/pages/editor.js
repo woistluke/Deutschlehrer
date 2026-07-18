@@ -44,10 +44,12 @@ function sectionEl(sec, si, total) {
         <button class="btn ghost sm" data-act="up" ${si === 0 ? 'disabled' : ''}>↑</button>
         <button class="btn ghost sm" data-act="down" ${si === total - 1 ? 'disabled' : ''}>↓</button>
         <button class="btn ghost sm" data-act="rename">Rename</button>
+        <button class="btn ghost sm" data-act="notes">Notes${sec.notes ? '' : ' ⚠️'}</button>
         <button class="btn ghost sm" data-act="add-unit">+ Unit</button>
         <button class="btn danger sm" data-act="del">Delete</button>
       </span>
     </header>
+    <div class="muted section-notes-preview" style="font-size:.78rem;margin:2px 0 6px">${sec.notes ? escapeHtml(sec.notes) : 'No notes/CEFR band set — the conversation phase for units in this section will default to a flat "A1–A2" tutor level. Click "Notes" to set one (e.g. "B1.2 -- ...").'}</div>
     <div class="spine-rail"></div>
   `;
   const rail = wrap.querySelector('.spine-rail');
@@ -57,6 +59,19 @@ function sectionEl(sec, si, total) {
   wrap.querySelector('[data-act="down"]').onclick = () => moveSection(sec, +1);
   wrap.querySelector('[data-act="rename"]').onclick = async () => {
     const t = prompt('Section title:', sec.title); if (t) { await store.updateSection(sec.section_id, { title: t }); render(); }
+  };
+  // sec.notes carries a CEFR sub-level tag (e.g. "B2.1 -- passive voice...")
+  // that prompts.js's sectionLevel() parses to set the conversation phase's
+  // assumed tutor level (see js/prompts.js buildUnitConvoPrompt). A section
+  // with no notes falls back to a flat "A1-A2" default there — the exact
+  // flattening the 2026-07-13 fix was meant to eliminate — so this field
+  // matters beyond being descriptive text. Previously there was no way to
+  // view or edit it from the Curriculum editor at all: a section added via
+  // "+ Add section" always got `notes: null` with no indication anything was
+  // missing (see IMPROVEMENT_LOG.md 2026-07-17 item 3).
+  wrap.querySelector('[data-act="notes"]').onclick = async () => {
+    const t = prompt('Section notes (include a CEFR band like A1/A2/B1/B2/C1 — this sets the conversation phase\'s assumed level for units in this section):', sec.notes || '');
+    if (t !== null) { await store.updateSection(sec.section_id, { notes: t.trim() || null }); render(); }
   };
   wrap.querySelector('[data-act="add-unit"]').onclick = async () => {
     const t = prompt('New unit title:'); if (!t) return;

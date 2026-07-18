@@ -141,11 +141,23 @@ Begin now with a natural greeting in German appropriate to the unit.`;
 
 // Single-sentence practice generator (lesson phase 2). Produces ONE-sentence
 // drills mixing English→German, German→English, and respond-in-German.
+// weakPoints/reviewItems were previously only threaded into buildUnitConvoPrompt
+// and buildQuizPrompt — this generator is called with the same sessionCtx as
+// both of those (it already carries weakPoints/reviewItems/vocabById), but
+// only ever destructured unit/priorWeak/pastSentenceIssues/errorTrend from it,
+// so one of the app's two graded phases never actually weighted Luke's known
+// weak points or due-for-review items the way the quiz phase does (see
+// IMPROVEMENT_LOG.md 2026-07-17 item 2). Also threads unit.objectives — every
+// seed unit authors this alongside grammar_focus as the lesson's communicative
+// goal, but until now only the conversation prompt ever saw it.
 export function buildSentencePrompt(ctx) {
-  const { unit, priorWeak = [], pastSentenceIssues = [], errorTrend = [] } = ctx;
+  const { unit, priorWeak = [], weakPoints = [], reviewItems = [], vocabById = {}, pastSentenceIssues = [], errorTrend = [] } = ctx;
   const pool = (unit?.vocab || []).map((v) => `${v.german} — ${v.english}${v.notes ? `  (note: ${v.notes})` : ''}`);
   const priorPool = priorWeak.map((v) => `${v.german} — ${v.english}${v.notes ? `  (note: ${v.notes})` : ''}`);
   const grammarFocus = (unit?.grammar_focus || []).join('; ');
+  const objectives = (unit?.objectives || []).join('; ');
+  const weakLinesText = weakLines(weakPoints, vocabById);
+  const reviewLinesText = reviewLines(reviewItems, vocabById);
   return `You are a German single-sentence drill generator. Using the vocabulary below, create exactly 5 SINGLE-SENTENCE practice items. Each item is ONE sentence only — never a multi-turn conversation.
 
 Use these five types:
@@ -157,12 +169,21 @@ Use these five types:
 Make exactly ONE of the 5 items type "word_order" and exactly ONE type "listen_type" (this unit's grammar focus below is a good source for both, when there is one); mix the remaining three roughly evenly across en_to_de/de_to_en/respond_de.
 
 Use the lesson vocabulary wherever it fits. Keep the language at the level implied by this unit's grammar focus and vocabulary below — don't default to simple present-tense sentences if the grammar focus below calls for something else (a past-tense unit's drills should be in the past tense, etc).
-${pastIssuesBlock(pastSentenceIssues)}${errorTrendBlock(errorTrend)}${grammarFocus ? `
+${pastIssuesBlock(pastSentenceIssues)}${errorTrendBlock(errorTrend)}${objectives ? `
+THIS UNIT'S OBJECTIVES (the communicative goal — draw at least one item toward actually accomplishing this, not just its vocabulary/grammar in isolation):
+${objectives}
+` : ''}${grammarFocus ? `
 THIS UNIT'S GRAMMAR FOCUS — build AT LEAST 1-2 of the 5 items to specifically exercise this, not just the vocabulary (e.g. a Perfekt-tense focus should produce a Perfekt-tense sentence; a word-order focus should require the correct word order to answer correctly):
 ${grammarFocus}
 ` : ''}${priorPool.length ? `
 PRIORITY REVIEW — words from EARLIER units the learner hasn't mastered yet. Spend at least ${Math.min(2, priorPool.length)} of the 5 items on these before drawing more from this lesson's vocabulary:
 ${priorPool.map((p) => `- ${p}`).join('\n')}
+` : ''}${weakLinesText ? `
+KNOWN WEAK POINTS — Luke has struggled with these; work at least one into an item where it fits naturally:
+${weakLinesText}
+` : ''}${reviewLinesText ? `
+DUE FOR REVIEW — items due to resurface; prefer these over brand-new material when an item's vocabulary choice is otherwise open:
+${reviewLinesText}
 ` : ''}
 Each of the 5 items is fully independent: its "answer" must be the direct, faithful
 solution to that SAME item's "prompt" only — never borrow wording, vocabulary, or
@@ -217,10 +238,19 @@ export function buildQuizPrompt(ctx, stage) {
     }).filter(Boolean),
   ].filter((line, i, arr) => arr.indexOf(line) === i && !priorLines.includes(line)); // de-dupe, and keep out of "rest" whatever's already in priority
   const grammarFocus = (unit?.grammar_focus || []).join('; ');
+  // Every seed unit authors objectives alongside grammar_focus as the
+  // lesson's communicative goal — previously threaded into buildUnitConvoPrompt
+  // only, leaving the quiz generator blind to what the lesson is actually
+  // trying to accomplish beyond its grammar point (see IMPROVEMENT_LOG.md
+  // 2026-07-17 item 2).
+  const objectives = (unit?.objectives || []).join('; ');
 
   if (stage === 'generate') {
     return `You are a German quiz generator. Build a short mixed quiz (5–7 items) from the item pool below. Mix directions: some German→English, some English→German, at least one fill-in-the-blank sentence, and at least one that targets a known weak point.
-${pastIssuesBlock(pastQuizIssues)}${errorTrendBlock(errorTrend)}${grammarFocus ? `
+${pastIssuesBlock(pastQuizIssues)}${errorTrendBlock(errorTrend)}${objectives ? `
+THIS UNIT'S OBJECTIVES (the communicative goal — where it fits, favor questions that actually test accomplishing this, not just isolated vocabulary recall):
+${objectives}
+` : ''}${grammarFocus ? `
 THIS UNIT'S GRAMMAR FOCUS — make sure AT LEAST 1-2 questions specifically test this, not just vocabulary recall (e.g. a Perfekt-tense focus should have a question that requires the correct Perfekt form; a word-order focus should require the correct order to answer correctly):
 ${grammarFocus}
 ` : ''}${priorLines.length ? `

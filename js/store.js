@@ -589,8 +589,17 @@ export async function getActiveUnit(userId) {
 }
 
 // Review items due now, recency-biased toward recently completed units.
+// Scoped to item_type 'vocab' — allProgress() also holds non-vocab aggregate
+// rows (e.g. the 'listening:aggregate' row recordListeningResult writes in
+// runner.js to feed cefr.js's Listening score), which have no entry in
+// vocabById. Left unfiltered, such a row could surface here and get rendered
+// by prompts.js's reviewLines() as a fake "vocab item" (falling back to the
+// raw item_id string, e.g. "- listening:aggregate (mastery 40%)") in the
+// conversation-phase prompt — instructing the tutor to weave in something
+// that isn't a word at all (see IMPROVEMENT_LOG.md 2026-07-17 item 1).
 export async function getDueReviewItems(userId, limit = REVIEW.maxItemsPerSession) {
-  const [prog, sections] = await Promise.all([allProgress(userId), getCurriculum(userId)]);
+  const [allProg, sections] = await Promise.all([allProgress(userId), getCurriculum(userId)]);
+  const prog = allProg.filter((p) => (p.item_type || 'vocab') === 'vocab');
   // Build a unit-order index so we can weight by recency.
   const order = [];
   sections.forEach((s) => s.units.forEach((u) => order.push(u.unit_id)));
@@ -609,8 +618,12 @@ export async function getDueReviewItems(userId, limit = REVIEW.maxItemsPerSessio
 }
 
 // Weak points: low mastery regardless of due date, plus flagged errors.
+// Same item_type scoping as getDueReviewItems above, and for the same
+// reason — this feeds buildUnitConvoPrompt's weakLines()/"KNOWN WEAK POINTS
+// TO DELIBERATELY PROBE" block, which has the same raw-item_id fallback.
 export async function getWeakPoints(userId, limit = 5) {
-  const prog = await allProgress(userId);
+  const allProg = await allProgress(userId);
+  const prog = allProg.filter((p) => (p.item_type || 'vocab') === 'vocab');
   return prog
     .filter((p) => (p.mastery_score || 0) < 0.5 || (p.known_errors || []).length)
     .sort((a, b) => (a.mastery_score || 0) - (b.mastery_score || 0))
