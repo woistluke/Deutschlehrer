@@ -62,12 +62,19 @@ Rules:
 - tip: only when genuinely useful, otherwise "".`;
 
 // Free-practice conversation (the Free Conversation exercise, in the Exercises tab). Level + topic chosen by
-// the learner; not tied to the curriculum.
-export function buildFreeConvoPrompt({ level = 'A2', topic = 'Free Conversation' } = {}) {
+// the learner; not tied to the curriculum. errorTrend (see store.recentErrorTrend)
+// was previously only threaded into the curriculum-tied prompts
+// (buildUnitConvoPrompt/buildSentencePrompt/buildQuizPrompt) -- Free
+// Conversation is one of the app's two main daily-practice surfaces
+// (alongside curriculum lessons) but never received this signal, so a
+// recent run of e.g. umlaut misses picked up during curriculum work had no
+// chance to also get exercised here even though the plumbing already
+// existed (see IMPROVEMENT_LOG.md 2026-07-18 item 3).
+export function buildFreeConvoPrompt({ level = 'A2', topic = 'Free Conversation', errorTrend = [] } = {}) {
   return `You are an immersive German conversation partner for a ${level}-level learner. Topic: "${topic}".
 Keep your German natural for ${level}: at A1/A2 use simple words and short sentences; at B2/C1 complex grammar and idioms are welcome.
 Gently correct the learner's real mistakes. Pay attention to umlaut spelling (e.g. möchte vs mochte) and the wo/woher/wohin distinction.
-
+${errorTrendBlock(errorTrend)}
 ${STRUCTURED_FORMAT}`;
 }
 

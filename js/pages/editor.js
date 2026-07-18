@@ -118,8 +118,8 @@ function unitEditor(u) {
       <div class="grid2">
         <label class="field"><span>Title</span><input data-f="title" value="${attr(u.title)}"></label>
         <label class="field"><span>Source <small>(CBG / Duolingo / PaulNoble / blank)</small></span><input data-f="source" value="${attr(u.source || '')}"></label>
-        <label class="field"><span>Objectives <small>(comma-separated)</small></span><input data-f="objectives" value="${attr((u.objectives || []).join(', '))}"></label>
-        <label class="field"><span>Grammar focus <small>(comma-separated)</small></span><input data-f="grammar" value="${attr((u.grammar_focus || []).join(', '))}"></label>
+        <label class="field"><span>Objectives <small>(one per line)</small></span><textarea data-f="objectives" rows="3">${escapeHtml((u.objectives || []).join('\n'))}</textarea></label>
+        <label class="field"><span>Grammar focus <small>(one per line)</small></span><textarea data-f="grammar" rows="3">${escapeHtml((u.grammar_focus || []).join('\n'))}</textarea></label>
         <label class="field"><span>Mastery threshold</span><input data-f="threshold" type="number" step="0.05" min="0" max="1" value="${u.mastery_threshold ?? 0.8}"></label>
         <label class="field"><span>Status</span>
           <select data-f="status">
@@ -173,8 +173,8 @@ function wireUnitEditor(d, u, sec, ui) {
     await store.updateUnit(u.unit_id, {
       title: f('title').value.trim(),
       source: f('source').value.trim() || null,
-      objectives: splitList(f('objectives').value),
-      grammar_focus: splitList(f('grammar').value),
+      objectives: splitLines(f('objectives').value),
+      grammar_focus: splitLines(f('grammar').value),
       mastery_threshold: threshold,
       status: f('status').value,
     });
@@ -231,6 +231,14 @@ async function addSection() {
 }
 
 // ---- utils ----
-function splitList(s) { return s.split(',').map((x) => x.trim()).filter(Boolean); }
+// Objectives/grammar_focus are one-entry-per-line (see unitEditor's
+// textareas) rather than comma-separated -- a comma-split previously
+// silently mangled any entry that itself contained a comma (e.g.
+// "w-questions (wo, wer, was)" -> ["w-questions (wo", "wer", "was)"]),
+// corrupting at least 14 of the 40 seed units' grammar_focus/objectives on
+// every "Save unit" click, since Save always re-serializes every field's
+// current input value regardless of what was actually edited (see
+// IMPROVEMENT_LOG.md 2026-07-18 item 1).
+function splitLines(s) { return s.split('\n').map((x) => x.trim()).filter(Boolean); }
 function escapeHtml(s) { return (s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
 function attr(s) { return (s ?? '').toString().replace(/"/g, '&quot;'); }

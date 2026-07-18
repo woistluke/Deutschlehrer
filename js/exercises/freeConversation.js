@@ -40,6 +40,13 @@ export function mount(el, ctx) {
     started: false,
   };
   let chat = null;
+  // Cross-session error-type trend (see store.recentErrorTrend) -- fetched
+  // once per mount and threaded into buildFreeConvoPrompt so this surface
+  // can also lean toward Luke's recently recurring error types, the same
+  // way the curriculum-tied prompts already do (see IMPROVEMENT_LOG.md
+  // 2026-07-18 item 3). Same "don't let this break the exercise" defensive
+  // .catch() as runner.js's usage.
+  let errorTrend = [];
   // Snapshot of the chat's message history captured whenever we leave the
   // chat screen for flashcards/review, so returning to chat resumes the same
   // conversation instead of starting a brand-new one (and re-sending an
@@ -101,6 +108,9 @@ export function mount(el, ctx) {
       store.createSession(ctx.userId, { mode: 'free' })
         .then((s) => { sessionId = s?.session_id || null; })
         .catch((e) => console.error('Failed to log conversation session:', e));
+      store.recentErrorTrend(ctx.userId)
+        .then((t) => { errorTrend = t || []; })
+        .catch(() => { errorTrend = []; });
     }
   }
 
@@ -144,7 +154,7 @@ export function mount(el, ctx) {
 
     const resuming = !!(savedHistory && savedHistory.length);
     chat = createRichChat(el.querySelector('#rich'), {
-      getSystemPrompt: () => buildFreeConvoPrompt({ level: view.level, topic: view.topic }),
+      getSystemPrompt: () => buildFreeConvoPrompt({ level: view.level, topic: view.topic, errorTrend }),
       initialMessages: savedHistory,
       onVocab: (list) => {
         view.vocab = list;

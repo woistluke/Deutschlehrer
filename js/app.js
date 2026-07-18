@@ -94,7 +94,27 @@ async function navigate(page) {
     b.classList.toggle('active', b.dataset.page === page));
   const view = document.getElementById('view');
   view.innerHTML = '';
-  currentUnmount = (await PAGES[page].mount(view, ctx)) || null;
+  // mount() can throw (e.g. a transient Supabase hiccup on Stats/Curriculum/
+  // Today's initial data fetch -- those don't defensively .catch() the way
+  // a few specific spots elsewhere in the app do). Previously an uncaught
+  // throw here just left view.innerHTML blank with nothing but a console
+  // error and no way to recover short of a full reload -- only boot()'s
+  // very first mount was ever guarded (see IMPROVEMENT_LOG.md 2026-07-18
+  // item 2).
+  try {
+    currentUnmount = (await PAGES[page].mount(view, ctx)) || null;
+  } catch (e) {
+    console.error(`Failed to load page "${page}":`, e);
+    currentUnmount = null;
+    view.innerHTML = `<div class="page-head"><div class="eyebrow">${page}</div><h1>Something went wrong loading this page</h1></div>
+      <div class="card"><p class="muted">${escapeErr(e.message || String(e))}</p><button class="btn primary" id="retry-page">Retry</button></div>`;
+    const retry = view.querySelector('#retry-page');
+    if (retry) retry.onclick = () => navigate(page);
+  }
+}
+
+function escapeErr(s) {
+  return (s ?? '').toString().replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 }
 
 boot().catch((e) => {
