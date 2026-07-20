@@ -197,9 +197,13 @@ async function buildContext(unit, section, mode) {
   ]);
   const pastSentenceIssues = store.recentFeedbackNotes(allFeedback, 'sentence_drill');
   const pastQuizIssues = store.recentFeedbackNotes(allFeedback, 'quiz');
+  // Same pattern, now for the conversation phase's tutor bubbles (see
+  // chatui.js's flagCtx / IMPROVEMENT_LOG.md 2026-07-20 item 1) -- this used
+  // to have no feedback loop at all.
+  const pastConvoIssues = store.recentFeedbackNotes(allFeedback, 'conversation');
   return {
     unit, section, sectionTitle: section?.title, reviewItems, weakPoints, priorWeak, vocabById, unitsById, sectionByUnitId, mode,
-    pastSentenceIssues, pastQuizIssues, errorTrend,
+    pastSentenceIssues, pastQuizIssues, pastConvoIssues, errorTrend,
   };
 }
 
@@ -236,6 +240,7 @@ async function startDueReview(sections) {
     unit: pseudoUnit, section: null, sectionTitle: 'Review', reviewItems: due, weakPoints: [], priorWeak: [], vocabById, unitsById, sectionByUnitId, mode: 'review',
     pastSentenceIssues: store.recentFeedbackNotes(allFeedback, 'sentence_drill'),
     pastQuizIssues: store.recentFeedbackNotes(allFeedback, 'quiz'),
+    pastConvoIssues: store.recentFeedbackNotes(allFeedback, 'conversation'),
     errorTrend,
   };
   session = await store.createSession(CTX.userId, { mode: 'review', unit_id: null });
@@ -515,7 +520,18 @@ async function mountSentencePhase() {
         audio.addEventListener('error', cleanup, { once: true });
         await audio.play();
       } catch (e) {
-        zone.querySelector('#sent-verdict').innerHTML = `<p class="verdict wrong">${esc(e.message)}</p>`;
+        // A missing/invalid OpenAI key is otherwise a dead end here: unlike
+        // the sentence/quiz/conjugation-match failure paths, this previously
+        // just printed the raw error with no way to fix it in place — and
+        // nothing stops the learner from guessing at a sentence they were
+        // never able to hear, since grading (DICTATION_GRADER_PROMPT) only
+        // needs the Groq key, not the OpenAI one TTS requires (see
+        // IMPROVEMENT_LOG.md 2026-07-20 item 2).
+        const isKeyError = /add it in settings/i.test(e.message || '');
+        zone.querySelector('#sent-verdict').innerHTML = `<p class="verdict wrong">${esc(e.message)}</p>` +
+          (isKeyError ? `<button class="btn sm" id="listen-settings" style="margin-top:6px">Go to Settings</button>` : '');
+        const settingsBtn = zone.querySelector('#listen-settings');
+        if (settingsBtn) settingsBtn.onclick = () => CTX.go('settings');
       } finally {
         playBtn.disabled = false;
       }
@@ -671,10 +687,17 @@ function mountConvoPhase() {
       <span class="muted" style="font-size:.82rem;margin-left:8px">Chat as long as you like, then take the quiz.</span>
     </div>
   `;
+  // flagCtx wires "⚑ Something wrong with this?" onto tutor bubbles (see
+  // chatui.js) -- unit comes from sessionCtx.fullUnit when available (the
+  // real unit for a curriculum-mode session; sessionCtx.unit may be a
+  // narrowed slice or, for due-review, a synthetic pseudo-unit with no real
+  // unit_id), same convention as mountQuestionFlag above.
+  const flagUnit = sessionCtx.fullUnit || sessionCtx.unit;
   convo = createRichChat(zone.querySelector('#convo-rich'), {
     getSystemPrompt: () => buildUnitConvoPrompt(sessionCtx),
     placeholder: 'Type in German…',
     onCorrections: recordConvoCorrections,
+    flagCtx: { userId: CTX.userId, contextType: 'conversation', unitId: flagUnit?.unit_id || null, unitTitle: sessionCtx.unit?.title || null },
   });
   convo.open('Begin the conversation now with a natural German greeting tied to this unit.');
   zone.querySelector('#convo-continue').onclick = nextPhase;

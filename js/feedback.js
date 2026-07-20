@@ -1,16 +1,19 @@
 // feedback.js — a small, reusable "flag an issue" widget dropped onto any
-// LLM-generated question/exercise card (sentence drills, quiz questions,
-// Verb Conjugation Match rounds). Deliberately lightweight and out of the
-// way: a single muted link that expands into a textarea + submit, logs to
-// the content_feedback table (store.js), and confirms inline.
+// LLM-generated question/exercise card or tutor chat bubble (sentence
+// drills, quiz questions, Verb Conjugation Match rounds, and — since
+// 2026-07-20 — curriculum/Free Conversation tutor replies, wired on via
+// chatui.js's flagCtx). Deliberately lightweight and out of the way: a
+// single muted link that expands into a textarea + submit, logs to the
+// content_feedback table (store.js), and confirms inline.
 //
 // This is intentionally negative-only — there's no "this was a good
 // question" counterpart to collect, per Luke, so every row logged here is a
 // problem report. See prompts.js (pastIssuesBlock / the pastSentenceIssues,
-// pastQuizIssues, and conjugation-match past-issues params) for how recent
-// notes get read back into generation as a "known issues to avoid" list —
-// that's the whole feedback loop this app has, so treat the notes people
-// write here as the only signal shaping future question quality.
+// pastQuizIssues, pastConvoIssues, and conjugation-match past-issues params)
+// for how recent notes get read back into generation as a "known issues to
+// avoid" list — that's the whole feedback loop this app has, so treat the
+// notes people write here as the only signal shaping future question/reply
+// quality.
 import * as store from './store.js';
 
 // container: an empty element to render into (put it at the bottom of a

@@ -18,24 +18,51 @@ const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1'];
 const TOPICS = ['Greetings & Small Talk', 'Ordering Food', 'Shopping', 'Travel & Directions',
   'Work & Career', 'Family & Home', 'Hobbies & Interests', 'Health & Body', 'Weather', 'Free Conversation'];
 
-const LS_PREFS = 'aufdeutsch.freeconvo';
-const LS_MISSED = 'aufdeutsch.missed';
+// Namespaced per handle (see IMPROVEMENT_LOG.md 2026-07-20 item 3) — every
+// other piece of app state (curriculum, progress, sessions, content
+// feedback) is scoped by user_id via store.js, even on the localStorage
+// fallback, matching the README's promise that switching handles switches
+// whose data you see. These two keys used to be flat/global, so testing a
+// second handle in the same browser leaked one handle's missed-flashcard
+// queue and default level/topic into the other's.
+const LS_PREFS_BASE = 'aufdeutsch.freeconvo';
+const LS_MISSED_BASE = 'aufdeutsch.missed';
 
-function loadPrefs() {
-  try { return JSON.parse(localStorage.getItem(LS_PREFS)) || {}; } catch { return {}; }
+// One-time carry-forward from the old flat (unscoped) key to the new
+// namespaced one, so switching to per-handle keys doesn't silently reset
+// Luke's real missed-card queue/prefs back to defaults the first time this
+// loads. Only migrates if the namespaced key doesn't exist yet AND then
+// removes the old flat key -- otherwise a second handle's first load would
+// also see the old key and wrongly inherit the first handle's data (the
+// bug this migration exists to fix, just delayed instead of avoided).
+function migrateFlatKey(base, userId) {
+  const oldKey = base, newKey = `${base}.${userId}`;
+  if (localStorage.getItem(newKey) != null) return;
+  const old = localStorage.getItem(oldKey);
+  if (old == null) return;
+  localStorage.setItem(newKey, old);
+  localStorage.removeItem(oldKey);
 }
-function savePrefs(p) { localStorage.setItem(LS_PREFS, JSON.stringify(p)); }
-function loadMissed() { try { return JSON.parse(localStorage.getItem(LS_MISSED)) || []; } catch { return []; } }
-function saveMissed(m) { localStorage.setItem(LS_MISSED, JSON.stringify(m)); }
+
+function loadPrefs(userId) {
+  migrateFlatKey(LS_PREFS_BASE, userId);
+  try { return JSON.parse(localStorage.getItem(`${LS_PREFS_BASE}.${userId}`)) || {}; } catch { return {}; }
+}
+function savePrefs(userId, p) { localStorage.setItem(`${LS_PREFS_BASE}.${userId}`, JSON.stringify(p)); }
+function loadMissed(userId) {
+  migrateFlatKey(LS_MISSED_BASE, userId);
+  try { return JSON.parse(localStorage.getItem(`${LS_MISSED_BASE}.${userId}`)) || []; } catch { return []; }
+}
+function saveMissed(userId, m) { localStorage.setItem(`${LS_MISSED_BASE}.${userId}`, JSON.stringify(m)); }
 
 export function mount(el, ctx) {
-  const prefs = loadPrefs();
+  const prefs = loadPrefs(ctx.userId);
   const view = {
     screen: 'setup',                       // setup | chat | flashcards | review
     level: prefs.level || 'A2',
     topic: prefs.topic || 'Greetings & Small Talk',
     vocab: [],                             // collected this session
-    missed: loadMissed(),
+    missed: loadMissed(ctx.userId),
     flash: { queue: [], idx: 0, flipped: false, score: { got: 0, missed: 0 } },
     started: false,
   };
@@ -47,6 +74,13 @@ export function mount(el, ctx) {
   // 2026-07-18 item 3). Same "don't let this break the exercise" defensive
   // .catch() as runner.js's usage.
   let errorTrend = [];
+  // Flagged-issue notes for the conversation surface (see feedback.js's
+  // "⚑ Something wrong with this?" affordance, now wired onto tutor bubbles
+  // via chatui.js's flagCtx) -- read back into buildFreeConvoPrompt via
+  // pastIssuesBlock, same pattern as errorTrend above. Previously Free
+  // Conversation had no feedback loop at all (see IMPROVEMENT_LOG.md
+  // 2026-07-20 item 1).
+  let pastConvoIssues = [];
   // Snapshot of the chat's message history captured whenever we leave the
   // chat screen for flashcards/review, so returning to chat resumes the same
   // conversation instead of starting a brand-new one (and re-sending an
@@ -91,8 +125,8 @@ export function mount(el, ctx) {
         ${view.missed.length ? `<button class="btn ghost" id="open-missed-setup" style="margin-top:8px;width:100%">🔁 Review ${view.missed.length} missed card${view.missed.length > 1 ? 's' : ''}</button>` : ''}
       </div>
     `;
-    el.querySelectorAll('[data-level]').forEach((b) => b.onclick = () => { view.level = b.dataset.level; savePrefs({ level: view.level, topic: view.topic }); renderSetup(); });
-    el.querySelectorAll('[data-topic]').forEach((b) => b.onclick = () => { view.topic = b.dataset.topic; savePrefs({ level: view.level, topic: view.topic }); renderSetup(); });
+    el.querySelectorAll('[data-level]').forEach((b) => b.onclick = () => { view.level = b.dataset.level; savePrefs(ctx.userId, { level: view.level, topic: view.topic }); renderSetup(); });
+    el.querySelectorAll('[data-topic]').forEach((b) => b.onclick = () => { view.topic = b.dataset.topic; savePrefs(ctx.userId, { level: view.level, topic: view.topic }); renderSetup(); });
     el.querySelector('#start').onclick = startChat;
     el.querySelector('#ex-back').onclick = () => ctx.go('exercises');
     const om = el.querySelector('#open-missed-setup');
@@ -111,6 +145,9 @@ export function mount(el, ctx) {
       store.recentErrorTrend(ctx.userId)
         .then((t) => { errorTrend = t || []; })
         .catch(() => { errorTrend = []; });
+      store.allContentFeedback(ctx.userId)
+        .then((all) => { pastConvoIssues = store.recentFeedbackNotes(all, 'conversation'); })
+        .catch(() => { pastConvoIssues = []; });
     }
   }
 
@@ -160,13 +197,14 @@ export function mount(el, ctx) {
 
     const resuming = !!(savedHistory && savedHistory.length);
     chat = createRichChat(el.querySelector('#rich'), {
-      getSystemPrompt: () => buildFreeConvoPrompt({ level: view.level, topic: view.topic, errorTrend }),
+      getSystemPrompt: () => buildFreeConvoPrompt({ level: view.level, topic: view.topic, errorTrend, pastIssues: pastConvoIssues }),
       initialMessages: savedHistory,
       onVocab: (list) => {
         view.vocab = list;
         const c = el.querySelector('#cards-count');
         if (c) c.textContent = list.length;
       },
+      flagCtx: { userId: ctx.userId, contextType: 'conversation', unitId: null, unitTitle: view.topic },
     });
     savedHistory = null; // consumed — the new instance now owns this history
     // Only open with a fresh greeting for a genuinely new conversation. Returning
@@ -218,7 +256,7 @@ export function mount(el, ctx) {
     view.flash.score[result]++;
     view.missed = view.missed.filter((c) => c.de !== card.de);
     if (result === 'missed') view.missed.push(card);
-    saveMissed(view.missed);
+    saveMissed(ctx.userId, view.missed);
     advanceFlash();
   }
 

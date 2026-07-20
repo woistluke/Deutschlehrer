@@ -69,12 +69,17 @@ Rules:
 // (alongside curriculum lessons) but never received this signal, so a
 // recent run of e.g. umlaut misses picked up during curriculum work had no
 // chance to also get exercised here even though the plumbing already
-// existed (see IMPROVEMENT_LOG.md 2026-07-18 item 3).
-export function buildFreeConvoPrompt({ level = 'A2', topic = 'Free Conversation', errorTrend = [] } = {}) {
+// existed (see IMPROVEMENT_LOG.md 2026-07-18 item 3). pastIssues (see
+// pastIssuesBlock above) was previously only threaded into
+// buildSentencePrompt/buildQuizPrompt's 'generate' stage/buildConjugationPrompt
+// -- the conversation prompts had no "flag an issue" affordance at all until
+// now, so there was nothing to thread even if this had been wired (see
+// IMPROVEMENT_LOG.md 2026-07-20 item 1).
+export function buildFreeConvoPrompt({ level = 'A2', topic = 'Free Conversation', errorTrend = [], pastIssues = [] } = {}) {
   return `You are an immersive German conversation partner for a ${level}-level learner. Topic: "${topic}".
 Keep your German natural for ${level}: at A1/A2 use simple words and short sentences; at B2/C1 complex grammar and idioms are welcome.
 Gently correct the learner's real mistakes. Pay attention to umlaut spelling (e.g. möchte vs mochte) and the wo/woher/wohin distinction.
-${errorTrendBlock(errorTrend)}
+${errorTrendBlock(errorTrend)}${pastIssuesBlock(pastIssues)}
 ${STRUCTURED_FORMAT}`;
 }
 
@@ -101,9 +106,15 @@ function sectionLevel(sectionNotes) {
 // arguably the best venue to organically reuse an older shaky word in a
 // natural sentence rather than a forced drill — blind to this pool entirely
 // (see IMPROVEMENT_LOG.md 2026-07-16 item 2).
-// ctx = { unit, section, sectionTitle, reviewItems, weakPoints, priorWeak, vocabById, mode }
+// ctx = { unit, section, sectionTitle, reviewItems, weakPoints, priorWeak, vocabById, mode, pastConvoIssues }
+// pastConvoIssues (see pastIssuesBlock above) is fed by a "flag an issue"
+// affordance on tutor chat bubbles (chatui.js) -- previously the conversation
+// phase had no feedback-flag mechanism at all, unlike sentence_drill/quiz/
+// conjugation_match, even though a flagged correction here now directly docks
+// mastery (see recordConvoCorrections in runner.js, and IMPROVEMENT_LOG.md
+// 2026-07-20 item 1).
 export function buildUnitConvoPrompt(ctx) {
-  const { unit, section, sectionTitle, reviewItems = [], weakPoints = [], priorWeak = [], vocabById = {}, mode = 'curriculum', errorTrend = [] } = ctx;
+  const { unit, section, sectionTitle, reviewItems = [], weakPoints = [], priorWeak = [], vocabById = {}, mode = 'curriculum', errorTrend = [], pastConvoIssues = [] } = ctx;
   const objectives = (unit?.objectives || []).join('; ');
   const grammar = (unit?.grammar_focus || []).join('; ');
   // Grounded in THIS unit's actual section, not a fixed assumption — a
@@ -133,7 +144,7 @@ ${weakLines(weakPoints, vocabById) || '- (none)'}
 
 STRAGGLERS FROM EARLIER UNITS (not yet mastered — look for a natural opening to use at least one or two of these too, so old material keeps getting closing-the-gap reps, not just this unit's new words):
 ${vocabLines(priorWeak) || '- (none)'}
-${errorTrendBlock(errorTrend)}
+${errorTrendBlock(errorTrend)}${pastIssuesBlock(pastConvoIssues)}
 HOW TO TEACH:
 - Hold a real back-and-forth conversation on the unit's topic. Ask questions; wait for answers.
 - Combine this lesson's new vocabulary with concepts from earlier lessons (the review items and stragglers above).

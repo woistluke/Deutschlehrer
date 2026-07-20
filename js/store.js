@@ -695,7 +695,7 @@ export const resolveContentFeedback = (id, status = 'addressed') =>
   update('content_feedback', 'content_feedback_id', id, { status });
 
 // Most recent N feedback notes for a given context (sentence_drill | quiz |
-// conjugation_match), formatted as short strings ready to drop into a
+// conjugation_match | conversation), formatted as short strings ready to drop into a
 // prompt. Takes the already-fetched full list rather than querying itself,
 // so callers that need multiple context types (e.g. runner.js wanting both
 // sentence_drill and quiz) only fetch once. Skips anything already marked

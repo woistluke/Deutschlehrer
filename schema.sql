@@ -107,7 +107,7 @@ create table if not exists sessions (
 create table if not exists content_feedback (
   content_feedback_id uuid primary key default gen_random_uuid(),
   user_id      text not null references app_users(user_id) on delete cascade,
-  context_type text not null,                          -- sentence_drill | quiz | conjugation_match
+  context_type text not null,                          -- sentence_drill | quiz | conjugation_match | conversation
   item_type    text,                                    -- e.g. en_to_de, fill_blank, word_order...
   unit_id      uuid references units(unit_id) on delete set null,
   unit_title   text,

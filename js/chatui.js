@@ -3,6 +3,7 @@
 // single-file app's features: reply + translation toggle, inline corrections,
 // grammar/culture tip, vocab chips, per-line TTS, and mic transcription.
 import { tutorStructured, speak, transcribe } from './ai.js';
+import { mountFeedbackFlag } from './feedback.js';
 
 export function escapeHtml(s) {
   return (s ?? '').toString().replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -17,7 +18,14 @@ export function escapeHtml(s) {
 // UI needs to tear down and recreate the DOM node — such as leaving/returning
 // from the flashcards screen — without losing the chat so far or re-sending
 // an opening greeting).
-export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, onCorrections = () => {}, placeholder = 'Schreib auf Deutsch…', initialMessages = null }) {
+// flagCtx: { userId, contextType, unitId, unitTitle } — when provided, tutor
+// bubbles get a "flag an issue" affordance (see feedback.js), and flagged
+// notes get read back into future generation via prompts.js's pastIssuesBlock
+// (buildUnitConvoPrompt/buildFreeConvoPrompt's pastConvoIssues/pastIssues).
+// Previously the conversation surfaces had no feedback loop at all, unlike
+// sentence_drill/quiz/conjugation_match (see IMPROVEMENT_LOG.md 2026-07-20
+// item 1). Omitted entirely (null) leaves bubbles exactly as before.
+export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, onCorrections = () => {}, placeholder = 'Schreib auf Deutsch…', initialMessages = null, flagCtx = null }) {
   let messages = initialMessages ? initialMessages.slice() : [];   // rich: {role, content, translation, corrections, tip, vocab}
   let vocab = [];      // de-duped collected vocab [{de,en}]
   let loading = false;
@@ -120,7 +128,7 @@ export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, onCorr
   }
 
   function paint() {
-    chatEl.innerHTML = messages.map(renderBubble).join('');
+    chatEl.innerHTML = messages.map((m, i) => renderBubble(m, i, !!flagCtx)).join('');
     chatEl.querySelectorAll('[data-speak]').forEach((b) => b.onclick = () => say(b.getAttribute('data-speak')));
     chatEl.querySelectorAll('[data-trans]').forEach((b) => b.onclick = () => {
       const box = chatEl.querySelector('#' + b.getAttribute('data-trans'));
@@ -128,6 +136,29 @@ export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, onCorr
       const hidden = box.classList.toggle('hidden');
       b.textContent = hidden ? 'show translation' : 'hide translation';
     });
+    // Wire each tutor bubble's flag slot (see the flagCtx param above). Only
+    // real tutor replies get one -- the "⚠️ <error message>" fallback bubble
+    // (see turn()'s catch below) isn't generated content, so there's nothing
+    // to flag. "prompt" context is the learner's own preceding message when
+    // there is one (empty for an opening greeting), "answer" is the tutor's
+    // reply text that's actually being flagged.
+    if (flagCtx) {
+      chatEl.querySelectorAll('[data-flag-slot]').forEach((slot) => {
+        const i = Number(slot.getAttribute('data-flag-slot'));
+        const m = messages[i];
+        if (!m || m.role !== 'tutor') return;
+        let prevUser = '';
+        for (let j = i - 1; j >= 0; j--) { if (messages[j].role === 'user') { prevUser = messages[j].content; break; } }
+        mountFeedbackFlag(slot, flagCtx.userId, {
+          contextType: flagCtx.contextType,
+          itemType: 'conversation',
+          unitId: flagCtx.unitId || null,
+          unitTitle: flagCtx.unitTitle || null,
+          prompt: prevUser,
+          answer: m.content,
+        });
+      });
+    }
     chatEl.scrollTop = chatEl.scrollHeight;
   }
 
@@ -145,10 +176,14 @@ export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, onCorr
 }
 
 let trId = 0;
-function renderBubble(m) {
+function renderBubble(m, i, includeFlag) {
   if (m.role === 'user') {
     return `<div class="turn user"><div class="bubble user">${escapeHtml(m.content)}</div></div>`;
   }
+  // The "⚠️ <error message>" fallback bubble (see turn()'s catch) isn't
+  // generated content -- nothing to flag, so it never gets a flag slot even
+  // when includeFlag is true.
+  const isErrorBubble = m.content && m.content.startsWith('⚠️');
   let h = `<div class="turn tutor">`;
   h += `<div class="bubble tutor">${escapeHtml(m.content)} <span class="speak" data-speak="${escapeHtml(m.content)}" title="Hear it">🔊</span></div>`;
   if (m.corrections && m.corrections.length) {
@@ -166,6 +201,7 @@ function renderBubble(m) {
       `<span class="vchip"><b>${escapeHtml(v.de)}</b> — ${escapeHtml(v.en)}</span>`
     ).join('') + `</div>`;
   }
+  if (includeFlag && !isErrorBubble) h += `<div class="fb-slot" data-flag-slot="${i}" style="margin-top:6px"></div>`;
   h += `</div>`;
   return h;
 }
