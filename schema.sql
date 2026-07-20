@@ -93,7 +93,7 @@ create table if not exists sessions (
   items_reviewed   jsonb not null default '[]'::jsonb,
   items_introduced jsonb not null default '[]'::jsonb,
   errors_observed  jsonb not null default '[]'::jsonb,
-  outcome      text                                  -- in_progress | unit_complete
+  outcome      text                                  -- in_progress | unit_complete | ended
 );
 
 -- content_feedback: learner-flagged issues on LLM-generated exercise/quiz

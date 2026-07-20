@@ -231,19 +231,40 @@ function poolLine(v) {
 // evaluates an answer leniently — see below.
 export function buildQuizPrompt(ctx, stage) {
   const { unit, reviewItems = [], weakPoints = [], priorWeak = [], vocabById = {}, pastQuizIssues = [], errorTrend = [] } = ctx;
+  const priorIds = new Set(priorWeak.map((v) => v.vocab_id || v.german));
   const priorLines = priorWeak.map(poolLine);
-  const restLines = [
-    ...(unit?.vocab || []).map(poolLine),
-    ...reviewItems.map((p) => { const v = vocabById[p.item_id]; return v ? poolLine(v) : null; }).filter(Boolean),
+  // Built keyed by vocab id (not by exact rendered string) so the same word
+  // never appears twice in the pool under two different text renderings.
+  // Previously deduped by exact string match only, which missed the case
+  // where a word is BOTH due for review (rendered via the plain poolLine
+  // format) AND a flagged weak point (rendered with an extra "(recurring
+  // issue: ...)" suffix) — two different-looking lines for one word, since
+  // both pools skew toward low-mastery items this overlap is common, not an
+  // edge case. Insertion order below (unit vocab, then reviewItems, then
+  // weakPoints) means a weakPoints entry — strictly more informative, since
+  // it names *why* the word is weak — always wins when a word shows up in
+  // more than one source.
+  const restById = new Map();
+  for (const v of (unit?.vocab || [])) {
+    const key = v.vocab_id || v.german;
+    if (key && !priorIds.has(key)) restById.set(key, poolLine(v));
+  }
+  for (const p of reviewItems) {
+    const v = vocabById[p.item_id];
+    const key = v && (v.vocab_id || v.german);
+    if (key && !priorIds.has(key)) restById.set(key, poolLine(v));
+  }
+  for (const p of weakPoints) {
+    const v = vocabById[p.item_id];
+    const key = v && (v.vocab_id || v.german);
+    if (!key || priorIds.has(key)) continue;
     // Weak points additionally carry *why* they're weak (known_errors, e.g.
     // "umlaut") when available — that's more useful to the generator than a
     // generic vocab note, so it takes priority over v.notes when both exist.
-    ...weakPoints.map((p) => {
-      const v = vocabById[p.item_id]; if (!v) return null;
-      const errs = (p.known_errors || []).join('; ');
-      return errs ? `${v.german} — ${v.english}  (recurring issue: ${errs})` : poolLine(v);
-    }).filter(Boolean),
-  ].filter((line, i, arr) => arr.indexOf(line) === i && !priorLines.includes(line)); // de-dupe, and keep out of "rest" whatever's already in priority
+    const errs = (p.known_errors || []).join('; ');
+    restById.set(key, errs ? `${v.german} — ${v.english}  (recurring issue: ${errs})` : poolLine(v));
+  }
+  const restLines = [...restById.values()];
   const grammarFocus = (unit?.grammar_focus || []).join('; ');
   // Every seed unit authors objectives alongside grammar_focus as the
   // lesson's communicative goal — previously threaded into buildUnitConvoPrompt
@@ -253,7 +274,15 @@ export function buildQuizPrompt(ctx, stage) {
   const objectives = (unit?.objectives || []).join('; ');
 
   if (stage === 'generate') {
-    return `You are a German quiz generator. Build a short mixed quiz (5–7 items) from the item pool below. Mix directions: some German→English, some English→German, at least one fill-in-the-blank sentence, and at least one that targets a known weak point.
+    // The weak-point clause below only makes sense — and is only
+    // achievable — when there's actually a weak point in the pool to
+    // target. Every other optional context block in this function
+    // (objectives, grammar focus, priority review) is already conditional
+    // on real data existing; this one previously wasn't, so a brand-new
+    // unit or a learner with no flagged weak points yet still got a fixed,
+    // unsatisfiable instruction to write a question that targets one.
+    const weakPointClause = weakPoints.length ? ', and at least one that targets a known weak point' : '';
+    return `You are a German quiz generator. Build a short mixed quiz (5–7 items) from the item pool below. Mix directions: some German→English, some English→German, at least one fill-in-the-blank sentence${weakPointClause}.
 ${pastIssuesBlock(pastQuizIssues)}${errorTrendBlock(errorTrend)}${objectives ? `
 THIS UNIT'S OBJECTIVES (the communicative goal — where it fits, favor questions that actually test accomplishing this, not just isolated vocabulary recall):
 ${objectives}

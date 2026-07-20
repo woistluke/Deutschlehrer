@@ -117,11 +117,17 @@ export function mount(el, ctx) {
   // Close out the current session row, if any (fire-and-forget — losing this
   // update just leaves outcome/ended_at as their defaults, it doesn't affect
   // Stats since streak/session counts key off started_at, not ended_at).
+  // outcome is 'ended' rather than 'in_progress' -- this call sets a real
+  // ended_at timestamp in the same write, so leaving outcome as
+  // 'in_progress' would contradict it and permanently mislabel every
+  // properly-closed free-conversation session as still in progress. Neither
+  // of schema.sql's other documented outcome values ('unit_complete') fits
+  // a free-chat session either, since there's no unit involved.
   function endConversationSession() {
     if (!sessionId) return;
     const id = sessionId;
     sessionId = null;
-    return store.updateSession(id, { ended_at: new Date().toISOString(), outcome: 'in_progress' })
+    return store.updateSession(id, { ended_at: new Date().toISOString(), outcome: 'ended' })
       .catch((e) => console.error('Failed to close conversation session:', e));
   }
 
