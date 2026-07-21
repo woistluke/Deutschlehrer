@@ -195,7 +195,17 @@ function wireUnitEditor(d, u, sec, ui) {
   };
   d.querySelectorAll('[data-vid]').forEach((rowEl) => {
     const vid = rowEl.getAttribute('data-vid');
-    rowEl.querySelector('[data-act="del-vocab"]').onclick = async () => { await store.deleteVocab(vid); render(); };
+    // Confirm before deleting, matching del-unit/del-section — a vocab row's
+    // own progress/SRS history is deleted with it via store.deleteVocab, and
+    // the "×" sits in a dense list of small buttons right next to the fields
+    // being edited, making a stray misclick plausible with no undo
+    // (see IMPROVEMENT_LOG.md 2026-07-21 item 4).
+    rowEl.querySelector('[data-act="del-vocab"]').onclick = async () => {
+      const g = rowEl.querySelector('[data-vf="german"]').value.trim();
+      if (!confirm(`Delete vocab "${g || '(untitled)'}"?`)) return;
+      await store.deleteVocab(vid);
+      render();
+    };
     rowEl.querySelectorAll('[data-vf]').forEach((inp) => {
       inp.onblur = async () => {
         await store.updateVocab(vid, {
@@ -209,18 +219,32 @@ function wireUnitEditor(d, u, sec, ui) {
 }
 
 // ---- reordering (swap positions) ----
+// Swap the two rows' ACTUAL stored `position` values, not their array
+// indices. `sections`/`sec.units` are freshly sorted by position each render,
+// so array index only equals stored position when every position in the
+// list is already contiguous (0, 1, 2, ...). deleteUnit/deleteSection never
+// renumber the siblings left behind after a delete, so a curriculum that's
+// ever had a mid-list section/unit removed can have gapped positions (e.g.
+// 0, 2, 3 for 3 remaining units) — writing the array index `i`/`j` straight
+// into `position` (the previous approach) would silently stomp the real
+// values instead of swapping them, risking a collision with another
+// sibling's position and a scrambled order that further reordering can't
+// cleanly fix (see IMPROVEMENT_LOG.md 2026-07-21 item 2). Using each row's
+// own `.position` value keeps the swap correct regardless of gaps.
 async function moveSection(sec, dir) {
   const sections = await store.getCurriculum(CTX.userId);
   const i = sections.findIndex((s) => s.section_id === sec.section_id);
   const j = i + dir; if (j < 0 || j >= sections.length) return;
-  await store.updateSection(sections[i].section_id, { position: j });
-  await store.updateSection(sections[j].section_id, { position: i });
+  const posI = sections[i].position, posJ = sections[j].position;
+  await store.updateSection(sections[i].section_id, { position: posJ });
+  await store.updateSection(sections[j].section_id, { position: posI });
   render();
 }
 async function moveUnit(u, sec, ui, dir) {
   const j = ui + dir; if (j < 0 || j >= sec.units.length) return;
-  await store.updateUnit(sec.units[ui].unit_id, { position: j });
-  await store.updateUnit(sec.units[j].unit_id, { position: ui });
+  const posI = sec.units[ui].position, posJ = sec.units[j].position;
+  await store.updateUnit(sec.units[ui].unit_id, { position: posJ });
+  await store.updateUnit(sec.units[j].unit_id, { position: posI });
   render();
 }
 async function addSection() {

@@ -709,19 +709,32 @@ function mountConvoPhase() {
 // went nowhere: chatui.js only ever rendered the tutor's "corrections" array,
 // never fed it back to SRS/progress the way graded sentence/quiz answers are
 // via recordResult(). This is the conversation-phase counterpart to
-// recordResult: for each { wrong, right, note } correction the tutor
-// returns, resolve it back to a specific vocab item when possible (same
-// longest-match heuristic as resolveVocabByLabel) and log it as a miss —
-// nudging that word's mastery down and adding to its known_errors, exactly
-// as a wrong quiz answer would. When a correction doesn't map to any single
-// vocab item (e.g. a general word-order slip spanning the whole sentence),
-// it still counts toward this session's errors_observed so recentErrorTrend
-// picks it up, just without a specific item to dock (see
-// IMPROVEMENT_LOG.md 2026-07-16 item 1).
+// recordResult: for each { wrong, right, note, vocab_label } correction the
+// tutor returns, resolve it back to a specific vocab item when possible and
+// log it as a miss — nudging that word's mastery down and adding to its
+// known_errors, exactly as a wrong quiz answer would. When a correction
+// doesn't map to any single vocab item (e.g. a general word-order slip
+// spanning the whole sentence), it still counts toward this session's
+// errors_observed so recentErrorTrend picks it up, just without a specific
+// item to dock (see IMPROVEMENT_LOG.md 2026-07-16 item 1).
+//
+// vocab_label (added 2026-07-21) is a new field on STRUCTURED_FORMAT's
+// corrections objects — the model is asked to name the SPECIFIC lesson vocab
+// word/phrase a correction is about, or leave it empty. Previously this
+// resolved a vocab item by substring-searching the whole c.right/c.wrong text
+// (which can be a full sentence) against all 645 curriculum words — a
+// preposition fix like "Ich gehe zur Schule" would still match and dock "die
+// Schule" just because that word happens to appear in the corrected sentence,
+// even though the mistake had nothing to do with knowing that word (see
+// IMPROVEMENT_LOG.md 2026-07-21 item 1). Using the model's own explicit
+// vocab_label — the same pattern buildQuizPrompt/buildSentencePrompt already
+// use via item_label — means a match only happens when the model itself says
+// this correction is about that specific word, not whenever it happens to
+// appear in the corrected text.
 async function recordConvoCorrections(corrections) {
   for (const c of corrections || []) {
     const errorType = inferCorrectionErrorType(c.wrong, c.right);
-    const label = ((c.right || c.wrong || '') + '').toLowerCase();
+    const label = ((c.vocab_label || '') + '').trim().toLowerCase();
     const vocab = label ? resolveVocabByLabel(label, sessionCtx.vocabById) : null;
 
     if (!vocab) {

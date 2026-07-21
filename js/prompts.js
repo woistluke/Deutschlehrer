@@ -51,13 +51,14 @@ const STRUCTURED_FORMAT = `Respond ONLY with valid JSON (no markdown, no code fe
 {
   "reply": "<your German response>",
   "translation": "<full English translation of your reply>",
-  "corrections": [{ "wrong": "<what the learner wrote>", "right": "<corrected form>", "note": "<brief grammar note>" }],
+  "corrections": [{ "wrong": "<what the learner wrote>", "right": "<corrected form>", "note": "<brief grammar note>", "vocab_label": "<the exact German or English text of ONE specific lesson vocabulary word/phrase this correction is about, copied verbatim from the vocabulary lists above, or empty string>" }],
   "tip": "<one short cultural or grammar insight, or empty string>",
   "vocab": [{ "de": "<German word/phrase from your reply>", "en": "<English meaning>" }]
 }
 Rules:
 - reply: natural German only; always end with a question to keep the conversation flowing.
 - corrections: only real errors from the learner's last message (max 3); empty array if they were correct.
+- vocab_label: ONLY fill this in when the mistake is specifically about knowing/spelling/forming one of the vocabulary words listed above for this session — copy that word's exact text so it can be matched precisely. Leave it empty for general grammar, word order, or anything not tied to one specific vocab item; do NOT guess a nearby word just because it appears in the sentence.
 - vocab: 1–3 useful words drawn from YOUR reply.
 - tip: only when genuinely useful, otherwise "".`;
 

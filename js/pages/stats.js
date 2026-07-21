@@ -20,7 +20,21 @@ export async function mountStats(el, ctx) {
   const sectionsComplete = sections.filter((s) => s.units.length && s.units.every((u) => u.status === 'complete')).length;
   const vocabTotal = units.reduce((n, u) => n + (u.vocab || []).length, 0);
 
-  const masteredVocab = progress.filter((p) => p.item_type === 'vocab' && (p.mastery_score || 0) >= 0.8).length;
+  // Each unit can carry its own customized mastery_threshold (default 0.8,
+  // set in the Curriculum editor) — unit-completion logic (maybePromote/
+  // unitMasteryStats in runner.js, getUnmasteredFromPriorUnits in store.js)
+  // and this very page's own "By unit" breakdown (unitRow/vocabStatusRow
+  // below) all honor it per-unit. The headline "Mastered" count here
+  // previously used a flat 0.8 for every word regardless of its unit's real
+  // threshold, so a customized unit would show a different "mastered" verdict
+  // in its own breakdown than it contributed to this count and the CEFR
+  // estimate below (see IMPROVEMENT_LOG.md 2026-07-21 item 3).
+  const vocabThreshold = {};
+  units.forEach((u) => {
+    const th = u.mastery_threshold ?? 0.8;
+    (u.vocab || []).forEach((v) => { vocabThreshold[v.vocab_id] = th; });
+  });
+  const masteredVocab = progress.filter((p) => p.item_type === 'vocab' && (p.mastery_score || 0) >= (vocabThreshold[p.item_id] ?? 0.8)).length;
   const seen = progress.reduce((n, p) => n + (p.times_seen || 0), 0);
   const correct = progress.reduce((n, p) => n + (p.times_correct || 0), 0);
   const accuracy = seen ? correct / seen : 0;
