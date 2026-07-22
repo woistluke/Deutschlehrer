@@ -909,12 +909,27 @@ async function recordListeningResult(correct) {
   await store.upsertProgress(CTX.userId, LISTENING_STATS_ID, { item_type: 'listening', ...upd });
 }
 
-// Map a graded answer back onto a progress record + SRS update.
+// Map a graded answer back onto a progress record + SRS update. When the
+// answer doesn't resolve to one specific vocab item (item_label empty —
+// respond_de/grammar-only items commonly have no label — or a label that
+// doesn't match anything), there's no SRS record to update, but the verdict's
+// error_type is still real signal about what went wrong. Push a { item_id:
+// null, error_type } entry onto sessionLog.errors in that case too, mirroring
+// recordConvoCorrections' same fallback (added 2026-07-16 so an unresolved
+// conversation correction still reaches recentErrorTrend) — previously this
+// function just returned early and silently dropped the error type instead,
+// so recentErrorTrend (and Stats' per-session error tally) systematically
+// undercounted exactly the free-form items most likely to reveal a real
+// grammar/vocab/spelling pattern.
 async function recordResult(q, verdict) {
   const label = (q.item_label || '').toLowerCase();
-  if (!label) return; // respond-in-German / grammar-only — nothing to map
-  const vocab = resolveVocabByLabel(label, sessionCtx.vocabById);
-  if (!vocab) return;
+  const vocab = label ? resolveVocabByLabel(label, sessionCtx.vocabById) : null;
+  if (!vocab) {
+    if (!verdict.correct && verdict.error_type && verdict.error_type !== 'none') {
+      sessionLog.errors.push({ item_id: null, error_type: verdict.error_type });
+    }
+    return;
+  }
   const itemId = vocab.vocab_id;
   const existing = (await store.getProgress(CTX.userId, itemId)) || {};
   const upd = applyAnswer(existing, !!verdict.correct);

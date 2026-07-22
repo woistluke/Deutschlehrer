@@ -476,6 +476,31 @@ const DUPLICATE_KEEP_UNIT = {
   'in diesem zusammenhang': 'Literary & Academic Texts',
 };
 
+// Normalized German-text lookup across a user's whole curriculum — the
+// preventive counterpart to mergeDuplicateVocab below. That migration (and
+// the 2026-07-10 seed cleanup it followed up on) fixed 25+ existing
+// duplicate vocab rows, but nothing stopped a NEW duplicate from being
+// created afterward through ordinary editing — an untracked-together
+// duplicate fragments SRS progress for what's really one word and creates
+// ambiguity for resolveVocabByLabel's longest-match heuristic (runner.js),
+// exactly the problem the cleanup paid down. Used by the Curriculum editor's
+// add-vocab handler to warn before creating one. Returns the first match's
+// { unitTitle, vocab }, or null if there's no duplicate.
+export async function findVocabDuplicate(userId, german, excludeVocabId = null) {
+  const key = norm(german);
+  if (!key) return null;
+  const sections = await getCurriculum(userId);
+  for (const sec of sections) {
+    for (const unit of sec.units) {
+      for (const v of (unit.vocab || [])) {
+        if (excludeVocabId && v.vocab_id === excludeVocabId) continue;
+        if (norm(v.german) === key) return { unitTitle: unit.title, vocab: v };
+      }
+    }
+  }
+  return null;
+}
+
 // Merge exact-duplicate vocab (same German text, case/whitespace-insensitive)
 // found across different units in one account into a single surviving row,
 // combining their progress instead of leaving two untracked-together rows

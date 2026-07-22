@@ -190,6 +190,12 @@ function wireUnitEditor(d, u, sec, ui) {
     const g = d.querySelector('[data-nv="german"]').value.trim();
     const e = d.querySelector('[data-nv="english"]').value.trim();
     if (!g || !e) return;
+    // Warn (don't hard-block — a deliberate duplicate is occasionally fine,
+    // e.g. reinforcing a word across two units on purpose) before creating a
+    // vocab row whose German text already exists elsewhere in the
+    // curriculum — see store.findVocabDuplicate for why this matters.
+    const dup = await store.findVocabDuplicate(CTX.userId, g);
+    if (dup && !confirm(`"${g}" already exists in "${dup.unitTitle}". Add it here as a separate entry anyway?`)) return;
     await store.createVocab(CTX.userId, { unit_id: u.unit_id, german: g, english: e, notes: d.querySelector('[data-nv="notes"]').value.trim() });
     render();
   };

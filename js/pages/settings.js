@@ -248,7 +248,7 @@ export async function mountSettings(el, ctx) {
 
 function feedbackRow(f) {
   const when = new Date(f.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  const ctxLabel = { sentence_drill: 'Sentence drill', quiz: 'Quiz', conjugation_match: 'Conjugation Match' }[f.context_type] || f.context_type;
+  const ctxLabel = { sentence_drill: 'Sentence drill', quiz: 'Quiz', conjugation_match: 'Conjugation Match', conversation: 'Conversation' }[f.context_type] || f.context_type;
   return `<div class="row spread" style="padding:8px 0;border-bottom:1px solid var(--line);align-items:flex-start">
     <div style="flex:1">
       <div style="font-size:.8rem" class="muted">${esc(ctxLabel)}${f.unit_title ? ` · ${esc(f.unit_title)}` : ''} · ${when}</div>
