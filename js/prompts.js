@@ -84,21 +84,6 @@ ${errorTrendBlock(errorTrend)}${pastIssuesBlock(pastIssues)}
 ${STRUCTURED_FORMAT}`;
 }
 
-// Sections' `notes` field carries a CEFR sub-level tag authored in seed.js
-// (e.g. "A1.1 -- the absolute basics...", "B2.1 -- passive voice, formal
-// writing...", "A1.3 -> A2.1 -- describing your home..."). Extract the CEFR
-// band(s) mentioned and take the LAST one — the band the section is heading
-// toward — so a section spanning a range (e.g. "A1.3 -> A2.1") reads as the
-// more advanced end, matching "keep the German at or slightly above the
-// learner's level." Falls back to null when a section has no notes (e.g.
-// the due-review pseudo-unit, which has no real section behind it).
-const CEFR_BAND_RE = /\b(A1|A2|B1|B2|C1|C2)\b/g;
-function sectionLevel(sectionNotes) {
-  if (!sectionNotes) return null;
-  const matches = [...sectionNotes.matchAll(CEFR_BAND_RE)].map((m) => m[1]);
-  return matches.length ? matches[matches.length - 1] : null;
-}
-
 // Curriculum conversation phase — structured, like the free tab but grounded in
 // the active unit, plus review items from previous lessons, known weak points,
 // and unmastered stragglers from earlier units (priorWeak — see
@@ -107,7 +92,7 @@ function sectionLevel(sectionNotes) {
 // arguably the best venue to organically reuse an older shaky word in a
 // natural sentence rather than a forced drill — blind to this pool entirely
 // (see IMPROVEMENT_LOG.md 2026-07-16 item 2).
-// ctx = { unit, section, sectionTitle, reviewItems, weakPoints, priorWeak, vocabById, mode, pastConvoIssues }
+// ctx = { unit, section, sectionTitle, reviewItems, weakPoints, priorWeak, vocabById, mode, pastConvoIssues, learnerLevel }
 // pastConvoIssues (see pastIssuesBlock above) is fed by a "flag an issue"
 // affordance on tutor chat bubbles (chatui.js) -- previously the conversation
 // phase had no feedback-flag mechanism at all, unlike sentence_drill/quiz/
@@ -115,18 +100,22 @@ function sectionLevel(sectionNotes) {
 // mastery (see recordConvoCorrections in runner.js, and IMPROVEMENT_LOG.md
 // 2026-07-20 item 1).
 export function buildUnitConvoPrompt(ctx) {
-  const { unit, section, sectionTitle, reviewItems = [], weakPoints = [], priorWeak = [], vocabById = {}, mode = 'curriculum', errorTrend = [], pastConvoIssues = [] } = ctx;
+  const { unit, sectionTitle, reviewItems = [], weakPoints = [], priorWeak = [], vocabById = {}, mode = 'curriculum', errorTrend = [], pastConvoIssues = [], learnerLevel } = ctx;
   const objectives = (unit?.objectives || []).join('; ');
   const grammar = (unit?.grammar_focus || []).join('; ');
-  // Grounded in THIS unit's actual section, not a fixed assumption — a
-  // hardcoded "A1-A2" here previously stayed put through the whole 40-unit
-  // curriculum, including late units whose grammar_focus is clearly B2/C1
-  // (passive voice, Konjunktiv I/II, indirect speech, advanced connectors),
-  // telling the tutor to keep things simple in exactly the phase meant to
-  // put that advanced material to use in real conversation.
-  const level = sectionLevel(section?.notes) || 'A1–A2';
+  // Grounded in the learner's actual measured progress (see cefr.js's
+  // currentLevelLabel, computed once per session in runner.js's
+  // buildContext/startDueReview and passed in as ctx.learnerLevel), not a
+  // per-section authored tag. Previously this read sectionLevel(section?.notes)
+  // — a hardcoded "A1-A2" fallback stayed put through the whole 40-unit
+  // curriculum whenever a section had no notes, and the "Review everything
+  // due" pseudo-session has no real section behind it at all, so it ALWAYS
+  // hit that fallback regardless of how advanced the actual due items were
+  // (see IMPROVEMENT_LOG.md 2026-07-23 item 2). Falling back to 'A1' here
+  // only covers a ctx built without buildContext/startDueReview at all.
+  const level = learnerLevel || 'A1';
 
-  return `You are a warm, encouraging German conversation tutor for an adult learner (Luke), currently working at roughly ${level} level based on where this unit sits in the curriculum. You speak mostly in simple German, dropping into English only inside the "translation"/"tip" fields. Keep your German at or just slightly above ${level} — matching THIS unit's own grammar focus and vocabulary below, not a flatter beginner default.
+  return `You are a warm, encouraging German conversation tutor for an adult learner (Luke), currently estimated at roughly ${level} level based on his actual progress so far. You speak mostly in simple German, dropping into English only inside the "translation"/"tip" fields. Keep your German at or just slightly above ${level} — matching THIS unit's own grammar focus and vocabulary below, not a flatter beginner default.
 
 SESSION MODE: ${mode}
 CURRENT SECTION: ${sectionTitle || '—'}

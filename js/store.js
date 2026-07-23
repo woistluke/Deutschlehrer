@@ -203,6 +203,49 @@ export async function recentErrorTrend(userId, sessionLimit = 10, topN = 3) {
     .map(([type, count]) => ({ type, count }));
 }
 
+// Shared input metrics for cefr.js's estimateLevels() — factored out so any
+// caller needing "the learner's current level" (currently pages/stats.js's
+// own inline computation, and runner.js's buildContext/startDueReview for
+// the conversation-phase level — see IMPROVEMENT_LOG.md 2026-07-23 item 2)
+// reads the SAME numbers from the SAME data instead of drifting out of sync
+// across two independent implementations. stats.js's own inline version
+// (masteredVocab/vocabTotal/etc.) still computes this itself today rather
+// than calling here, since it also needs several of the same intermediate
+// values (vocabThreshold map, etc.) for other cards on that page — left
+// alone to avoid touching a page with no test coverage as part of an
+// unrelated fix; a future pass could have it call this instead.
+export async function getCefrMetrics(userId) {
+  const [sections, progress, sessions] = await Promise.all([
+    getCurriculum(userId), allProgress(userId), allSessions(userId),
+  ]);
+  const units = sections.flatMap((s) => s.units);
+  const unitsTotal = units.length;
+  const unitsComplete = units.filter((u) => u.status === 'complete').length;
+  const vocabTotal = units.reduce((n, u) => n + (u.vocab || []).length, 0);
+
+  const vocabThreshold = {};
+  units.forEach((u) => {
+    const th = u.mastery_threshold ?? 0.8;
+    (u.vocab || []).forEach((v) => { vocabThreshold[v.vocab_id] = th; });
+  });
+  const masteredVocab = progress.filter((p) => p.item_type === 'vocab' && (p.mastery_score || 0) >= (vocabThreshold[p.item_id] ?? 0.8)).length;
+
+  const seen = progress.reduce((n, p) => n + (p.times_seen || 0), 0);
+  const correct = progress.reduce((n, p) => n + (p.times_correct || 0), 0);
+  const accuracy = seen ? correct / seen : 0;
+
+  const listeningRows = progress.filter((p) => p.item_type === 'listening');
+  const listeningReps = listeningRows.reduce((n, p) => n + (p.times_seen || 0), 0);
+  const listeningCorrect = listeningRows.reduce((n, p) => n + (p.times_correct || 0), 0);
+  const listeningAccuracy = listeningReps ? listeningCorrect / listeningReps : null;
+
+  const lessonSessions = sessions.filter((s) => s.mode === 'curriculum').length;
+  const freeSessions = sessions.filter((s) => s.mode === 'free').length;
+  const speakingPracticeSessions = lessonSessions + freeSessions;
+
+  return { masteredVocab, vocabTotal, unitsComplete, unitsTotal, accuracy, conversationSessions: speakingPracticeSessions, listeningAccuracy, listeningReps };
+}
+
 // ---- composite reads ------------------------------------------------------
 // Full nested curriculum: [{...section, units:[{...unit, vocab:[...]}]}]
 export async function getCurriculum(userId) {

@@ -44,12 +44,12 @@ function sectionEl(sec, si, total) {
         <button class="btn ghost sm" data-act="up" ${si === 0 ? 'disabled' : ''}>↑</button>
         <button class="btn ghost sm" data-act="down" ${si === total - 1 ? 'disabled' : ''}>↓</button>
         <button class="btn ghost sm" data-act="rename">Rename</button>
-        <button class="btn ghost sm" data-act="notes">Notes${sec.notes ? '' : ' ⚠️'}</button>
+        <button class="btn ghost sm" data-act="notes">Notes</button>
         <button class="btn ghost sm" data-act="add-unit">+ Unit</button>
         <button class="btn danger sm" data-act="del">Delete</button>
       </span>
     </header>
-    <div class="muted section-notes-preview" style="font-size:.78rem;margin:2px 0 6px">${sec.notes ? escapeHtml(sec.notes) : 'No notes/CEFR band set — the conversation phase for units in this section will default to a flat "A1–A2" tutor level. Click "Notes" to set one (e.g. "B1.2 -- ...").'}</div>
+    <div class="muted section-notes-preview" style="font-size:.78rem;margin:2px 0 6px">${sec.notes ? escapeHtml(sec.notes) : 'No notes set — purely documentation (e.g. a CEFR band like "B1.2 -- ...") for anyone reading the curriculum. Click "Notes" to set one.'}</div>
     <div class="spine-rail"></div>
   `;
   const rail = wrap.querySelector('.spine-rail');
@@ -60,17 +60,18 @@ function sectionEl(sec, si, total) {
   wrap.querySelector('[data-act="rename"]').onclick = async () => {
     const t = prompt('Section title:', sec.title); if (t) { await store.updateSection(sec.section_id, { title: t }); render(); }
   };
-  // sec.notes carries a CEFR sub-level tag (e.g. "B2.1 -- passive voice...")
-  // that prompts.js's sectionLevel() parses to set the conversation phase's
-  // assumed tutor level (see js/prompts.js buildUnitConvoPrompt). A section
-  // with no notes falls back to a flat "A1-A2" default there — the exact
-  // flattening the 2026-07-13 fix was meant to eliminate — so this field
-  // matters beyond being descriptive text. Previously there was no way to
-  // view or edit it from the Curriculum editor at all: a section added via
-  // "+ Add section" always got `notes: null` with no indication anything was
-  // missing (see IMPROVEMENT_LOG.md 2026-07-17 item 3).
+  // sec.notes is free-text documentation for a human reading the curriculum
+  // (e.g. a CEFR sub-level tag like "B2.1 -- passive voice..."). It no
+  // longer drives the conversation phase's assumed tutor level — that's now
+  // computed from the learner's actual measured progress (see cefr.js's
+  // currentLevelLabel, wired in via runner.js's buildContext/startDueReview
+  // and prompts.js's buildUnitConvoPrompt), since a per-section authored tag
+  // had no way to reflect an individual learner's real pace, and the
+  // "Review everything due" pseudo-session has no single real section to
+  // read one from at all (see IMPROVEMENT_LOG.md 2026-07-23 item 2). Kept
+  // editable here purely as curriculum documentation.
   wrap.querySelector('[data-act="notes"]').onclick = async () => {
-    const t = prompt('Section notes (include a CEFR band like A1/A2/B1/B2/C1 — this sets the conversation phase\'s assumed level for units in this section):', sec.notes || '');
+    const t = prompt('Section notes — documentation only (e.g. a CEFR band like "B1.2 -- ..."):', sec.notes || '');
     if (t !== null) { await store.updateSection(sec.section_id, { notes: t.trim() || null }); render(); }
   };
   wrap.querySelector('[data-act="add-unit"]').onclick = async () => {
@@ -83,7 +84,7 @@ function sectionEl(sec, si, total) {
     // 'available' out of the normal end-of-section append order could feed
     // premature/empty vocab into that pool. Luke can still flip status
     // manually in the unit editor's Status field once it's actually ready.
-    await store.createUnit(CTX.userId, { section_id: sec.section_id, title: t, position: sec.units.length });
+    await store.createUnit(CTX.userId, { section_id: sec.section_id, title: t, position: nextPosition(sec.units) });
     render();
   };
   wrap.querySelector('[data-act="del"]').onclick = async () => {
@@ -92,16 +93,34 @@ function sectionEl(sec, si, total) {
   return wrap;
 }
 
+// Both fields are threaded into every sentence/quiz/conversation prompt
+// (see prompts.js) as the unit's grammar target and communicative goal — an
+// empty one degrades generation quality for that unit exactly the way a
+// section with no notes used to degrade the (now-removed) section-level
+// tutor-level lookup. Surfaced here the same way that was: an inline
+// warning, so it's visible while skimming the 40-unit list instead of only
+// discoverable by opening each unit's editor (see IMPROVEMENT_LOG.md
+// 2026-07-23 item 3). A unit stubbed via "+ Unit" starts with both empty by
+// design, so this is expected right after creating one, not itself a bug.
+function missingUnitMeta(u) {
+  const missing = [];
+  if (!(u.objectives || []).length) missing.push('objectives');
+  if (!(u.grammar_focus || []).length) missing.push('grammar focus');
+  return missing;
+}
+
 function unitEl(u, sec, ui) {
   const d = document.createElement('div');
   d.className = `unit ${u.status}`;
   const open = expanded.has(u.unit_id);
+  const missing = missingUnitMeta(u);
+  const missingTitle = missing.length ? ` title="Missing ${missing.join(' and ')} — this weakens sentence/quiz/conversation generation for this unit."` : '';
   d.innerHTML = `
     <div class="row spread">
       <div>
         <span class="unit-title">${escapeHtml(u.title)}</span>
         ${u.source ? `<span class="tag src-${u.source}" style="margin-left:8px">${u.source}</span>` : ''}
-        <div class="unit-meta">${(u.objectives || []).join(' · ') || 'no objectives set'}</div>
+        <div class="unit-meta"${missingTitle}>${(u.objectives || []).join(' · ') || 'no objectives set'}${missing.length ? ' ⚠️' : ''}</div>
       </div>
       <button class="btn ghost sm" data-act="toggle">${open ? 'Close' : 'Edit'}</button>
     </div>
@@ -118,8 +137,8 @@ function unitEditor(u) {
       <div class="grid2">
         <label class="field"><span>Title</span><input data-f="title" value="${attr(u.title)}"></label>
         <label class="field"><span>Source <small>(CBG / Duolingo / PaulNoble / blank)</small></span><input data-f="source" value="${attr(u.source || '')}"></label>
-        <label class="field"><span>Objectives <small>(one per line)</small></span><textarea data-f="objectives" rows="3">${escapeHtml((u.objectives || []).join('\n'))}</textarea></label>
-        <label class="field"><span>Grammar focus <small>(one per line)</small></span><textarea data-f="grammar" rows="3">${escapeHtml((u.grammar_focus || []).join('\n'))}</textarea></label>
+        <label class="field"><span>Objectives${(u.objectives || []).length ? '' : ' ⚠️'} <small>(one per line — used in every sentence/quiz/conversation prompt for this unit)</small></span><textarea data-f="objectives" rows="3">${escapeHtml((u.objectives || []).join('\n'))}</textarea></label>
+        <label class="field"><span>Grammar focus${(u.grammar_focus || []).length ? '' : ' ⚠️'} <small>(one per line — used in every sentence/quiz/conversation prompt for this unit)</small></span><textarea data-f="grammar" rows="3">${escapeHtml((u.grammar_focus || []).join('\n'))}</textarea></label>
         <label class="field"><span>Mastery threshold</span><input data-f="threshold" type="number" step="0.05" min="0" max="1" value="${u.mastery_threshold ?? 0.8}"></label>
         <label class="field"><span>Status</span>
           <select data-f="status">
@@ -256,8 +275,24 @@ async function moveUnit(u, sec, ui, dir) {
 async function addSection() {
   const sections = await store.getCurriculum(CTX.userId);
   const t = prompt('New section title:'); if (!t) return;
-  await store.createSection(CTX.userId, { title: t, position: sections.length });
+  await store.createSection(CTX.userId, { title: t, position: nextPosition(sections) });
   render();
+}
+
+// Next append position for a freshly-created sibling row (a new section
+// among `sections`, or a new unit among `sec.units`). Deliberately NOT
+// `items.length`: deleteSection/deleteUnit (store.js) never renumber the
+// siblings left behind after a delete, so a list that's ever had something
+// removed from the middle can have gapped positions (e.g. `0, 2` for 2
+// remaining items) where `.length` (2) collides with a position a sibling
+// already holds, instead of landing safely past every existing one. Using
+// one past the highest ACTUAL position present avoids that collision
+// regardless of any gaps — the same reasoning moveSection/moveUnit below
+// already apply on the reorder side (see IMPROVEMENT_LOG.md 2026-07-21 item
+// 2 and 2026-07-23 item 1).
+function nextPosition(items) {
+  if (!items.length) return 0;
+  return Math.max(...items.map((i) => i.position ?? 0)) + 1;
 }
 
 // ---- utils ----

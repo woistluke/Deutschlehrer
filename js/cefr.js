@@ -84,5 +84,37 @@ export function readinessToward(overallScore, targetBand = 'B1') {
   return clamp((overallScore / Math.max(1, target)) * 100, 0, 100);
 }
 
+// Human-readable "current level" label derived from the learner's actual
+// measured progress (this file's own estimate), rather than a fixed,
+// curriculum-authored tag on whatever unit/section happens to be active.
+// Used by the conversation-phase prompt (see prompts.js's buildUnitConvoPrompt
+// and runner.js's buildContext/startDueReview) so the tutor's assumed level
+// tracks what Luke has actually demonstrated so far, not just where he is in
+// the syllabus — this also fixes the "Review everything due" pseudo-session
+// (no single real section behind it, so there was nothing to read a level
+// tag from) and, as a side effect, keeps early lessons genuinely at A1 for
+// someone just starting out rather than whatever a section's authored notes
+// claim (see IMPROVEMENT_LOG.md 2026-07-23 item 2).
+//
+// Per Luke's spec (2026-07-23): stay flat at the CURRENT band (e.g. "A1")
+// until NEAR_BAND_THRESHOLD of the way through it, then switch to a
+// transitional "current–next" label ("A1–A2") to start stretching the
+// learner toward the next band. Once real progress actually crosses into
+// that next band, the label collapses back to just that band alone ("A2")
+// — not "A2–B1" — until the same 75%-through point is reached again within
+// it. `levelEstimate` is one of the { band, within, score } objects returned
+// by estimateLevels() above (its `overall` field is what callers should
+// pass in practice).
+const NEAR_BAND_THRESHOLD = 0.75;
+export function currentLevelLabel(levelEstimate, threshold = NEAR_BAND_THRESHOLD) {
+  const { band, within } = levelEstimate || {};
+  const idx = BANDS.indexOf(band);
+  if (idx === -1) return BANDS[0];
+  if (within >= threshold && idx < BANDS.length - 1) {
+    return `${band}–${BANDS[idx + 1]}`;
+  }
+  return band;
+}
+
 function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
 function round2(n) { return Math.round(n * 100) / 100; }

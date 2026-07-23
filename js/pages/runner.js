@@ -11,6 +11,7 @@ import { createRichChat, escapeHtml } from '../chatui.js';
 import { applyAnswer, unitMeetsThreshold } from '../srs.js';
 import { UNIT_COMPLETION_RATIO } from '../config.js';
 import { mountFeedbackFlag } from '../feedback.js';
+import { estimateLevels, currentLevelLabel } from '../cefr.js';
 
 const PHASES = [
   { key: 'vocab', label: 'Vocabulary' },
@@ -177,12 +178,29 @@ function buildSectionByUnitMap(sections) {
   return map;
 }
 
+// The conversation phase's assumed level (see prompts.js's buildUnitConvoPrompt
+// and cefr.js's currentLevelLabel) — computed from the learner's actual
+// measured progress rather than a per-section authored tag, so it's the same
+// number regardless of which session type is asking. Defensive same as the
+// content-feedback/error-trend fetches below: a transient failure here
+// shouldn't block starting a lesson, it should just fall back to the
+// lowest/safest level (see IMPROVEMENT_LOG.md 2026-07-23 item 2).
+async function computeLearnerLevel() {
+  try {
+    const metrics = await store.getCefrMetrics(CTX.userId);
+    return currentLevelLabel(estimateLevels(metrics).overall);
+  } catch (e) {
+    console.error('Failed to compute learner level, defaulting to A1:', e);
+    return 'A1';
+  }
+}
+
 async function buildContext(unit, section, mode) {
   const sections = await store.getCurriculum(CTX.userId);
   const vocabById = buildVocabMap(sections);
   const unitsById = buildUnitsMap(sections);
   const sectionByUnitId = buildSectionByUnitMap(sections);
-  const [reviewItems, weakPoints, priorWeak, allFeedback, errorTrend] = await Promise.all([
+  const [reviewItems, weakPoints, priorWeak, allFeedback, errorTrend, learnerLevel] = await Promise.all([
     store.getDueReviewItems(CTX.userId),
     store.getWeakPoints(CTX.userId),
     mode === 'curriculum' ? store.getUnmasteredFromPriorUnits(CTX.userId, unit.unit_id) : Promise.resolve([]),
@@ -194,6 +212,7 @@ async function buildContext(unit, section, mode) {
     // "don't let this break session start" defensiveness as content
     // feedback above.
     store.recentErrorTrend(CTX.userId).catch(() => []),
+    computeLearnerLevel(),
   ]);
   const pastSentenceIssues = store.recentFeedbackNotes(allFeedback, 'sentence_drill');
   const pastQuizIssues = store.recentFeedbackNotes(allFeedback, 'quiz');
@@ -203,7 +222,7 @@ async function buildContext(unit, section, mode) {
   const pastConvoIssues = store.recentFeedbackNotes(allFeedback, 'conversation');
   return {
     unit, section, sectionTitle: section?.title, reviewItems, weakPoints, priorWeak, vocabById, unitsById, sectionByUnitId, mode,
-    pastSentenceIssues, pastQuizIssues, pastConvoIssues, errorTrend,
+    pastSentenceIssues, pastQuizIssues, pastConvoIssues, errorTrend, learnerLevel,
   };
 }
 
@@ -232,16 +251,23 @@ async function startDueReview(sections) {
   const unitsById = buildUnitsMap(sections);
   const sectionByUnitId = buildSectionByUnitMap(sections);
   const pseudoUnit = { title: 'Due review', objectives: ['refresh items due for review'], grammar_focus: [], vocab: due.map((p) => vocabById[p.item_id]).filter(Boolean) };
-  const [allFeedback, errorTrend] = await Promise.all([
+  // No single real section backs this pseudo-unit (the due items can come
+  // from any number of units across the curriculum), so the conversation
+  // phase's assumed level is driven entirely by computeLearnerLevel()'s
+  // progress-based estimate — previously this fell back to a hardcoded flat
+  // "A1–A2" every single time, regardless of how advanced the actual due
+  // items were (see IMPROVEMENT_LOG.md 2026-07-23 item 2).
+  const [allFeedback, errorTrend, learnerLevel] = await Promise.all([
     store.allContentFeedback(CTX.userId).catch(() => []),
     store.recentErrorTrend(CTX.userId).catch(() => []),
+    computeLearnerLevel(),
   ]);
   sessionCtx = {
     unit: pseudoUnit, section: null, sectionTitle: 'Review', reviewItems: due, weakPoints: [], priorWeak: [], vocabById, unitsById, sectionByUnitId, mode: 'review',
     pastSentenceIssues: store.recentFeedbackNotes(allFeedback, 'sentence_drill'),
     pastQuizIssues: store.recentFeedbackNotes(allFeedback, 'quiz'),
     pastConvoIssues: store.recentFeedbackNotes(allFeedback, 'conversation'),
-    errorTrend,
+    errorTrend, learnerLevel,
   };
   session = await store.createSession(CTX.userId, { mode: 'review', unit_id: null });
   phaseIdx = 0;
