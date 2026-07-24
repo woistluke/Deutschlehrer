@@ -45,6 +45,18 @@ export async function mount(el, ctx) {
     return;
   }
 
+  // Log a session row so a Conjugation Match round counts toward the day
+  // streak and session totals the same way Free Conversation's chat does
+  // (see freeConversation.js's startChat) -- previously this exercise never
+  // called store.createSession at all, so playing it left zero trace in
+  // Stats' streak/session-count/"Recent Sessions" even though it's a real
+  // practice rep on the same "standalone, no-SRS-scoring" footing as Free
+  // Conversation (see IMPROVEMENT_LOG.md 2026-07-24 item 2). Fire-and-forget,
+  // same as freeConversation.js -- losing this write just means one rep
+  // doesn't count toward the streak, it doesn't block the exercise.
+  store.createSession(ctx.userId, { mode: 'conjugation_match' })
+    .catch((e) => console.error('Failed to log conjugation-match session:', e));
+
   renderStatus(el, 'Building conjugations…');
   // Same "never let feedback plumbing break the exercise" defensiveness as
   // runner.js: if content_feedback isn't queryable yet (e.g. Supabase

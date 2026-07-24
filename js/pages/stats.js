@@ -35,8 +35,17 @@ export async function mountStats(el, ctx) {
     (u.vocab || []).forEach((v) => { vocabThreshold[v.vocab_id] = th; });
   });
   const masteredVocab = progress.filter((p) => p.item_type === 'vocab' && (p.mastery_score || 0) >= (vocabThreshold[p.item_id] ?? 0.8)).length;
-  const seen = progress.reduce((n, p) => n + (p.times_seen || 0), 0);
-  const correct = progress.reduce((n, p) => n + (p.times_correct || 0), 0);
+  // Scoped to item_type 'vocab', same as masteredVocab above — otherwise the
+  // 'listening:aggregate' pseudo-row (recordListeningResult in runner.js)
+  // leaks into this generic figure, which feeds both this page's "Accuracy"
+  // stat and (via getCefrMetrics' twin computation) the Reading/Speaking
+  // CEFR scores — quietly blending hearing-comprehension performance into
+  // skills it isn't supposed to measure, even though Listening already gets
+  // its own dedicated accuracy signal a few lines below (see
+  // IMPROVEMENT_LOG.md 2026-07-24 item 1).
+  const vocabProgress = progress.filter((p) => p.item_type === 'vocab');
+  const seen = vocabProgress.reduce((n, p) => n + (p.times_seen || 0), 0);
+  const correct = vocabProgress.reduce((n, p) => n + (p.times_correct || 0), 0);
   const accuracy = seen ? correct / seen : 0;
   const dueNow = progress.filter((p) => !p.next_due || new Date(p.next_due) <= new Date()).length;
 

@@ -133,22 +133,35 @@ export function mount(el, ctx) {
     if (om) om.onclick = () => startFlashcards(view.missed);
   }
 
-  function startChat() {
+  // Previously this rendered the chat screen (which synchronously opens the
+  // first turn -- chat.open() -> turn() -> getSystemPrompt(), all before
+  // turn()'s first await) BEFORE kicking off the errorTrend/pastConvoIssues
+  // fetches below, so buildFreeConvoPrompt's very first call -- the opening
+  // greeting -- always ran with both at their empty initial values; only the
+  // learner's second message onward ever saw real context. runner.js's
+  // buildContext avoids this for the curriculum conversation phase by
+  // awaiting the same two fetches before mounting -- this now does the same
+  // here (see IMPROVEMENT_LOG.md 2026-07-24 item 3). createSession is left
+  // fire-and-forget since it doesn't feed the prompt, only sessionId (used
+  // for session close-out).
+  async function startChat() {
     savedHistory = null; // starting fresh from setup — new topic, new conversation
     sessionId = null;
-    view.screen = 'chat';
-    renderChat();
+    const startBtn = el.querySelector('#start');
+    if (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Starting…'; }
     if (ctx?.userId) {
       store.createSession(ctx.userId, { mode: 'free' })
         .then((s) => { sessionId = s?.session_id || null; })
         .catch((e) => console.error('Failed to log conversation session:', e));
-      store.recentErrorTrend(ctx.userId)
-        .then((t) => { errorTrend = t || []; })
-        .catch(() => { errorTrend = []; });
-      store.allContentFeedback(ctx.userId)
-        .then((all) => { pastConvoIssues = store.recentFeedbackNotes(all, 'conversation'); })
-        .catch(() => { pastConvoIssues = []; });
+      const [trend, allFeedback] = await Promise.all([
+        store.recentErrorTrend(ctx.userId).catch(() => []),
+        store.allContentFeedback(ctx.userId).catch(() => []),
+      ]);
+      errorTrend = trend || [];
+      pastConvoIssues = store.recentFeedbackNotes(allFeedback, 'conversation');
     }
+    view.screen = 'chat';
+    renderChat();
   }
 
   // Close out the current session row, if any (fire-and-forget — losing this

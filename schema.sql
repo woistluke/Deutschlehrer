@@ -87,7 +87,7 @@ create table if not exists sessions (
   session_id   uuid primary key default gen_random_uuid(),
   user_id      text not null references app_users(user_id) on delete cascade,
   unit_id      uuid references units(unit_id) on delete set null,
-  mode         text not null default 'curriculum',  -- curriculum | review | free
+  mode         text not null default 'curriculum',  -- curriculum | review | free | conjugation_match
   started_at   timestamptz not null default now(),
   ended_at     timestamptz,
   items_reviewed   jsonb not null default '[]'::jsonb,
