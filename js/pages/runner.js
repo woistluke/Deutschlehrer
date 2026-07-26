@@ -233,6 +233,15 @@ async function startSession(unit, section, mode) {
   if (mode === 'curriculum') {
     sessionCtx.unit = { ...unit, vocab: await selectSessionVocab(unit) };
     sessionCtx.fullUnit = unit;
+  } else if (mode === 'review') {
+    // "Review this unit" (as opposed to due-review's synthetic pseudo-unit,
+    // built directly in startDueReview and never routed through here) is
+    // reviewing one real unit end to end, so fullUnit should be set just
+    // like the curriculum path -- otherwise recordResult's cross-unit-
+    // promotion check and finishQuiz's explicit maybePromote branch below
+    // can't tell this unit apart from every other unit (see
+    // IMPROVEMENT_LOG.md 2026-07-25 item 1 / 2026-07-26).
+    sessionCtx.fullUnit = unit;
   }
   session = await store.createSession(CTX.userId, { mode, unit_id: unit.unit_id });
   if (mode === 'curriculum' && unit.status === 'available') {
@@ -993,7 +1002,7 @@ async function finishQuiz() {
   const zone = ROOT.querySelector('#phase-zone');
   let unitComplete = false;
   lastOutcome = 'in_progress';
-  if (sessionCtx.mode === 'curriculum' && sessionCtx.fullUnit) {
+  if ((sessionCtx.mode === 'curriculum' || sessionCtx.mode === 'review') && sessionCtx.fullUnit) {
     unitComplete = await maybePromote(sessionCtx.fullUnit);
     if (unitComplete) lastOutcome = 'unit_complete';
   }

@@ -37,6 +37,10 @@ export const meta = {
 };
 
 export async function mount(el, ctx) {
+  // Tracks this exercise instance's own session row (set once createSession
+  // below resolves) so it can be closed out on exit -- see closeSession().
+  let sessionId = null;
+
   renderStatus(el, 'Finding verbs you\'ve already practiced…');
   const candidates = await pickIntroducedVerbs(ctx.userId);
 
@@ -55,7 +59,24 @@ export async function mount(el, ctx) {
   // same as freeConversation.js -- losing this write just means one rep
   // doesn't count toward the streak, it doesn't block the exercise.
   store.createSession(ctx.userId, { mode: 'conjugation_match' })
+    .then((row) => { sessionId = row?.session_id || null; })
     .catch((e) => console.error('Failed to log conjugation-match session:', e));
+
+  // Close out this exercise's session row -- mirrors freeConversation.js's
+  // endConversationSession. Previously the 2026-07-24 fix created a session
+  // row here but nothing ever closed it, and mount() never returned a
+  // cleanup function for pages/exercises.js's activeUnmount hook to call
+  // either, so every Conjugation Match session stayed at outcome
+  // 'in_progress' with no ended_at forever, regardless of whether the
+  // learner finished all rounds or navigated away mid-session (see
+  // IMPROVEMENT_LOG.md 2026-07-25 item 2 / 2026-07-26).
+  function closeSession() {
+    if (!sessionId) return;
+    const id = sessionId;
+    sessionId = null;
+    return store.updateSession(id, { ended_at: new Date().toISOString(), outcome: 'ended' })
+      .catch((e) => console.error('Failed to close conjugation-match session:', e));
+  }
 
   renderStatus(el, 'Building conjugations…');
   // Same "never let feedback plumbing break the exercise" defensiveness as
@@ -68,8 +89,8 @@ export async function mount(el, ctx) {
   try {
     table = await quizCall(buildConjugationPrompt(shuffle(candidates).slice(0, CANDIDATE_POOL), pastIssues), 'Generate the conjugation table now.');
   } catch (e) {
-    renderError(el, ctx, e.message);
-    return;
+    renderError(el, ctx, e.message, closeSession);
+    return closeSession;
   }
 
   const byId = Object.fromEntries(candidates.map((v) => [v.vocab_id, v]));
@@ -90,15 +111,20 @@ export async function mount(el, ctx) {
     .slice(0, ROUND_SIZE);
 
   if (!rounds.length) {
-    renderError(el, ctx, "Couldn't build a conjugation round from those verbs this time.");
-    return;
+    renderError(el, ctx, "Couldn't build a conjugation round from those verbs this time.", closeSession);
+    return closeSession;
   }
 
   let idx = 0;
   renderRound();
+  return closeSession;
 
   function renderRound() {
     if (idx >= rounds.length) {
+      // The round set is genuinely done -- close out the session row here
+      // rather than waiting for a button click or navigation away, so a
+      // finished exercise is never left dangling at outcome 'in_progress'.
+      closeSession();
       el.innerHTML = `
         <div class="page-head"><div class="eyebrow">Exercise complete</div><h1>${esc(meta.title)}</h1></div>
         <div class="card">
@@ -152,7 +178,7 @@ export async function mount(el, ctx) {
         <div class="fb-slot" style="margin-top:10px"></div>
       </div>
     `;
-    el.querySelector('#ex-back').onclick = () => ctx.go('exercises');
+    el.querySelector('#ex-back').onclick = () => { closeSession(); ctx.go('exercises'); };
     mountFeedbackFlag(el.querySelector('.fb-slot'), ctx.userId, {
       contextType: 'conjugation_match',
       itemType: null,
@@ -239,11 +265,16 @@ function renderEmpty(el, ctx, title, body) {
   el.querySelector('#ex-back').onclick = () => ctx.go('exercises');
 }
 
-function renderError(el, ctx, message) {
+function renderError(el, ctx, message, closeSession) {
   // A missing/invalid API key surfaces here as a normal call failure, but
   // "Try again" just fails the same way a second time — point straight at
   // the fix instead (mirrors the same handling in pages/runner.js).
   const isKeyError = /add it in settings/i.test(message || '');
+  // A session row is already created by the time this screen can show (the
+  // failure happens after createSession fires) -- close it out on every exit
+  // from here (retry, settings, or back), same as a normal round exit, so an
+  // errored-out attempt doesn't stay stuck at outcome 'in_progress' either.
+  const close = typeof closeSession === 'function' ? closeSession : () => {};
   el.innerHTML = `
     <div class="page-head"><div class="eyebrow">Exercise</div><h1>${esc(meta.title)}</h1></div>
     <div class="card">
@@ -256,9 +287,9 @@ function renderError(el, ctx, message) {
       </div>
     </div>
   `;
-  if (isKeyError) el.querySelector('#ex-settings').onclick = () => ctx.go('settings');
-  else el.querySelector('#ex-retry').onclick = () => mount(el, ctx);
-  el.querySelector('#ex-back').onclick = () => ctx.go('exercises');
+  if (isKeyError) el.querySelector('#ex-settings').onclick = () => { close(); ctx.go('settings'); };
+  else el.querySelector('#ex-retry').onclick = () => { close(); mount(el, ctx); };
+  el.querySelector('#ex-back').onclick = () => { close(); ctx.go('exercises'); };
 }
 
 function shuffle(arr) {

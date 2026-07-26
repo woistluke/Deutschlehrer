@@ -71,6 +71,14 @@ export async function mountStats(el, ctx) {
   const lessonSessions = sessions.filter((s) => s.mode === 'curriculum').length;
   const freeSessions = sessions.filter((s) => s.mode === 'free').length;
   const reviewSessions = sessions.filter((s) => s.mode === 'review').length;
+  // Conjugation Match sessions are real practice reps too (see
+  // conjugationMatch.js's createSession/closeSession) but don't fit any of
+  // the three sessions.mode buckets above -- previously they weren't
+  // tallied anywhere on this page even though they counted toward the day
+  // streak, so a day spent entirely on Conjugation Match showed 0 across
+  // every mode-specific Habit-card stat (see IMPROVEMENT_LOG.md 2026-07-25
+  // item 3 / 2026-07-26).
+  const conjugationSessions = sessions.filter((s) => s.mode === 'conjugation_match').length;
   const speakingPracticeSessions = lessonSessions + freeSessions;
   const streak = dayStreak(sessions);
   const active = units.find((u) => u.status !== 'complete');
@@ -138,11 +146,12 @@ export async function mountStats(el, ctx) {
 
       <div class="card">
         <h2>Habit</h2>
-        <div class="grid2" style="grid-template-columns:repeat(4,1fr)">
+        <div class="grid2" style="grid-template-columns:repeat(5,1fr)">
           ${stat(`${streak}🔥`, streak === 1 ? 'Day streak' : 'Day streak')}
           ${stat(lessonSessions, 'Lessons')}
           ${stat(freeSessions, 'Conversations')}
           ${stat(reviewSessions, 'Review runs')}
+          ${stat(conjugationSessions, 'Verb drills')}
         </div>
         <p class="muted" style="font-size:.85rem;margin-bottom:0">${active ? `Currently working on <b>${esc(active.title)}</b>.` : 'All units complete — add more in the editor or keep reviewing.'}</p>
       </div>
@@ -187,7 +196,7 @@ function skillRow(label, lvl, strong) {
 }
 const UNIT_STATUS_LABEL = { locked: 'Locked', available: 'Available', in_progress: 'In progress', complete: 'Complete' };
 
-const SESSION_MODE_LABEL = { curriculum: 'Lesson', review: 'Review', free: 'Conversation' };
+const SESSION_MODE_LABEL = { curriculum: 'Lesson', review: 'Review', free: 'Conversation', conjugation_match: 'Conjugation Match' };
 
 // Last few sessions with what each one introduced/reviewed and which error
 // types came up — the first real reader of items_introduced/items_reviewed/
