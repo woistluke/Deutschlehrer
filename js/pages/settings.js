@@ -21,6 +21,8 @@ export async function mountSettings(el, ctx) {
       <p>Your handle separates your progress from other testers. Keys stay in this browser only — they are never sent anywhere except directly to Groq and OpenAI.</p>
     </div>
 
+    ${ctx.remoteError ? `<div class="banner warn">Couldn't reach Supabase with the saved URL/key (${esc(ctx.remoteError.message)}) — falling back to local storage for now. Fix or clear the Supabase fields below and save again to retry.</div>` : ''}
+
     <div class="card">
       <h2>Who's learning</h2>
       <label class="field"><span>Your handle <small>— e.g. luke. Switching handles switches whose curriculum you see.</small></span>

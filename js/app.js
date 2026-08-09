@@ -35,17 +35,34 @@ function loadSettings() {
 
 async function boot() {
   const settings = loadSettings();
-  const remote = store.initStore(settings);
+  let remote = store.initStore(settings);
   const userId = (localStorage.getItem(LS.activeUser) || 'luke').toLowerCase();
 
-  await store.ensureUser(userId);
-  // Seed the proposed curriculum on first run for this handle.
-  if (!(await store.isSeeded(userId))) {
-    await store.seedCurriculum(userId);
+  // A Supabase URL/key that's set but unreachable (typo, revoked key, a
+  // paused free-tier project, network/CORS) previously threw here and hit
+  // the top-level boot().catch() below, which wipes document.body down to a
+  // bare "Startup error" banner with no nav — no way back into Settings to
+  // fix or clear the bad credentials short of clearing localStorage by hand.
+  // Fall back to local storage instead, same as the "no keys yet" path, so
+  // the app stays usable and Settings shows what went wrong.
+  let remoteError = null;
+  try {
+    await store.ensureUser(userId);
+    if (!(await store.isSeeded(userId))) {
+      await store.seedCurriculum(userId);
+    }
+  } catch (e) {
+    console.error('Remote store unreachable, falling back to local storage:', e);
+    remoteError = e;
+    remote = store.initStore({});
+    await store.ensureUser(userId);
+    if (!(await store.isSeeded(userId))) {
+      await store.seedCurriculum(userId);
+    }
   }
 
   ctx = {
-    userId, settings, remote,
+    userId, settings, remote, remoteError,
     switchUser: async (u) => {
       localStorage.setItem(LS.activeUser, u);
       location.reload();
@@ -55,7 +72,7 @@ async function boot() {
   };
 
   renderShell();
-  navigate('runner');
+  navigate(remoteError ? 'settings' : 'runner');
 }
 
 function renderShell() {
