@@ -43,16 +43,27 @@ export async function mountSettings(el, ctx) {
 
     <div class="card">
       <h2>API keys</h2>
-      <label class="field"><span>Groq API key <small>— conversation + quiz</small></span>
+      <label class="field"><span>Groq API key <small>— conversation + quiz generation when Groq is selected below</small></span>
         <input id="set-groq" type="password" value="${esc(s.groqKey)}" placeholder="gsk_..." /></label>
-      <label class="field"><span>OpenAI API key <small>— speech + transcription</small></span>
+      <label class="field"><span>OpenAI API key <small>— speech + transcription (always), plus conversation + quiz generation when OpenAI is selected below</small></span>
         <input id="set-openai" type="password" value="${esc(s.openaiKey)}" placeholder="sk-..." /></label>
     </div>
 
     <div class="card">
+      <h2>Question &amp; conversation generation</h2>
+      <p class="muted" style="margin-top:0">Which provider writes the tutor's conversation replies and generates sentence/quiz questions. Groq is free; OpenAI tends to produce noticeably better quality output. Switch back and forth any time — each provider's model settings below are kept separately, so nothing gets lost when you flip back.</p>
+      <label class="field"><span>Provider</span>
+        <select id="set-textprovider">
+          <option value="groq" ${(s.textProvider || DEFAULTS.textProvider) === 'groq' ? 'selected' : ''}>Groq (free)</option>
+          <option value="openai" ${(s.textProvider || DEFAULTS.textProvider) === 'openai' ? 'selected' : ''}>OpenAI (higher quality)</option>
+        </select></label>
+    </div>
+
+    <div class="card">
       <h2>Models</h2>
+      <h3 style="margin:0 0 8px;font-size:.9rem">Groq</h3>
       <div class="grid2">
-        <label class="field"><span>Tutor model <small>(Groq)</small></span>
+        <label class="field"><span>Tutor model</span>
           <input id="set-tutormodel" value="${esc(s.tutorModel || DEFAULTS.tutorModel)}" /></label>
         <label class="field"><span>Tutor temperature</span>
           <input id="set-tutortemp" type="number" step="0.1" min="0" max="2" value="${s.tutorTemperature ?? DEFAULTS.tutorTemperature}" /></label>
@@ -60,12 +71,19 @@ export async function mountSettings(el, ctx) {
           <input id="set-quizmodel" value="${esc(s.quizModel || DEFAULTS.quizModel)}" /></label>
         <label class="field"><span>Quiz temperature</span>
           <input id="set-quiztemp" type="number" step="0.1" min="0" max="2" value="${s.quizTemperature ?? DEFAULTS.quizTemperature}" /></label>
+      </div>
+      <h3 style="margin:16px 0 8px;font-size:.9rem">OpenAI</h3>
+      <div class="grid2">
+        <label class="field"><span>Tutor model</span>
+          <input id="set-openai-tutormodel" value="${esc(s.openaiTutorModel || DEFAULTS.openaiTutorModel)}" /></label>
+        <label class="field"><span>Quiz model <small>(separate, stricter)</small></span>
+          <input id="set-openai-quizmodel" value="${esc(s.openaiQuizModel || DEFAULTS.openaiQuizModel)}" /></label>
         <label class="field"><span>TTS voice</span>
           <input id="set-voice" value="${esc(s.ttsVoice || DEFAULTS.ttsVoice)}" /></label>
         <label class="field"><span>TTS model</span>
           <input id="set-ttsmodel" value="${esc(s.ttsModel || DEFAULTS.ttsModel)}" /></label>
       </div>
-      <p class="muted" style="font-size:.82rem">Verify current model strings at console.groq.com — provider model names change over time.</p>
+      <p class="muted" style="font-size:.82rem">Verify current model strings at console.groq.com and platform.openai.com — provider model names change over time. Tutor/quiz temperature above apply to whichever provider is selected. TTS and transcription always use OpenAI, regardless of the provider picked above.</p>
     </div>
 
     <button class="btn primary" id="set-save">Save settings</button>
@@ -145,8 +163,10 @@ export async function mountSettings(el, ctx) {
       ...s,
       supabaseUrl: val('#set-suburl'), supabaseAnonKey: val('#set-subkey'),
       groqKey: val('#set-groq'), openaiKey: val('#set-openai'),
+      textProvider: val('#set-textprovider'),
       tutorModel: val('#set-tutormodel'), tutorTemperature: numVal('#set-tutortemp'),
       quizModel: val('#set-quizmodel'), quizTemperature: numVal('#set-quiztemp'),
+      openaiTutorModel: val('#set-openai-tutormodel'), openaiQuizModel: val('#set-openai-quizmodel'),
       ttsVoice: val('#set-voice'), ttsModel: val('#set-ttsmodel'),
       groqBase: s.groqBase || DEFAULTS.groqBase, openaiBase: s.openaiBase || DEFAULTS.openaiBase,
       transcribeModel: s.transcribeModel || DEFAULTS.transcribeModel,

@@ -43,16 +43,46 @@ async function chatCompletion({ base, key, model, temperature, messages, jsonMod
   return data.choices?.[0]?.message?.content ?? '';
 }
 
+// Resolves which provider generates tutor conversation replies + quiz/
+// sentence questions, per the "Provider" setting in Settings (see
+// config.js's textProvider default and js/pages/settings.js). Groq and
+// OpenAI both expose the same OpenAI-compatible /chat/completions shape
+// chatCompletion() above calls, so switching provider is nothing more than
+// swapping which base/key/model triple gets passed in — no separate code
+// path needed. TTS/transcription (speak/transcribe below) are unaffected --
+// those always use OpenAI regardless of this setting, since Groq doesn't
+// offer them.
+function textProviderSettings(s) {
+  const provider = s.textProvider === 'openai' ? 'openai' : 'groq';
+  if (provider === 'openai') {
+    return {
+      provider,
+      base: s.openaiBase || DEFAULTS.openaiBase,
+      key: s.openaiKey,
+      tutorModel: s.openaiTutorModel || DEFAULTS.openaiTutorModel,
+      quizModel: s.openaiQuizModel || DEFAULTS.openaiQuizModel,
+    };
+  }
+  return {
+    provider,
+    base: s.groqBase || DEFAULTS.groqBase,
+    key: s.groqKey,
+    tutorModel: s.tutorModel || DEFAULTS.tutorModel,
+    quizModel: s.quizModel || DEFAULTS.quizModel,
+  };
+}
+
 // Structured tutor turn — the tutor model returns JSON with reply, translation,
 // corrections, tip and vocab (the rich conversation format ported from the
 // original single-file app). Falls back to a plain reply object if the model
 // doesn't produce parseable JSON.
 export async function tutorStructured(systemPrompt, history) {
   const s = getSettings();
+  const p = textProviderSettings(s);
   const raw = await chatCompletion({
-    base: s.groqBase || DEFAULTS.groqBase,
-    key: s.groqKey,
-    model: s.tutorModel || DEFAULTS.tutorModel,
+    base: p.base,
+    key: p.key,
+    model: p.tutorModel,
     temperature: s.tutorTemperature ?? DEFAULTS.tutorTemperature,
     messages: [{ role: 'system', content: systemPrompt }, ...history],
     jsonMode: true,
@@ -81,10 +111,11 @@ function parseTutorJson(raw) {
 // Quiz model — separate, stricter config, JSON out.
 export async function quizCall(systemPrompt, userContent) {
   const s = getSettings();
+  const p = textProviderSettings(s);
   const raw = await chatCompletion({
-    base: s.groqBase || DEFAULTS.groqBase,
-    key: s.groqKey,
-    model: s.quizModel || DEFAULTS.quizModel,
+    base: p.base,
+    key: p.key,
+    model: p.quizModel,
     temperature: s.quizTemperature ?? DEFAULTS.quizTemperature,
     messages: [
       { role: 'system', content: systemPrompt },

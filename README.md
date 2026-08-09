@@ -28,9 +28,10 @@ On first load it seeds a proposed curriculum for the handle `luke` and runs in *
 
 1. **Handle** — `luke`, `tester1`, etc. Switching the handle switches whose curriculum and progress you see. No password (see Security below).
 2. **Supabase URL + anon key** — from your Supabase project's API settings. Until these are set, the app uses local storage.
-3. **Groq API key** — powers both the conversation tutor and the quiz grader.
-4. **OpenAI API key** — powers text-to-speech (nova / gpt-4o-mini-tts) and Whisper transcription.
-5. **Models** — tutor and quiz are configured separately, on purpose: the quiz runs at a lower temperature so grading isn't softened by the chat's encouraging tone. Verify current Groq model strings at console.groq.com.
+3. **Groq API key** — powers the conversation tutor and quiz grader when Groq is the selected provider (the default — see #5).
+4. **OpenAI API key** — always powers text-to-speech (nova / gpt-4o-mini-tts) and Whisper transcription; also powers the conversation tutor and quiz grader when OpenAI is the selected provider.
+5. **Provider** — pick Groq (free) or OpenAI (noticeably better quality, per testing) to generate conversation replies and sentence/quiz questions. Switchable any time in Settings; each provider keeps its own model settings, so flipping back and forth doesn't lose either configuration.
+6. **Models** — tutor and quiz are configured separately, on purpose: the quiz runs at a lower temperature so grading isn't softened by the chat's encouraging tone. Verify current model strings at console.groq.com (Groq) and platform.openai.com (OpenAI).
 
 Keys live in this browser's localStorage only. They're sent directly to Groq/OpenAI from the client, never to any server of ours.
 
@@ -49,7 +50,7 @@ The first time a handle loads against an empty database, the app seeds the propo
 - **srs.js** — spaced repetition. Correct answers climb an interval ladder (0/1/3/7/14/30/90 days); a miss drops two levels. Mastery blends accuracy with ladder position so one lucky hit doesn't count as mastered.
 - **cefr.js** — the rough CEFR estimate. Reads vocabulary mastered, units completed, and quiz accuracy, scaled against the curriculum's *own current size* (not an external word-count-per-level benchmark — see the file's header comment); tilts the three skills (reading leans on recognition, speaking on production, listening on dictation accuracy once there are a few reps to trust — falls back to blended accuracy before then). A motivating gauge of curriculum progress mapped onto CEFR-shaped bands, not an externally validated placement test.
 - **prompts.js** — assembles prompts at runtime: a structured free-conversation prompt (level/topic), a structured unit-conversation prompt (active unit + due review + weak points), a single-sentence drill generator, and the quiz generator + lenient "possible solution" grader. The conversation prompts return the rich JSON (reply/translation/corrections/tip/vocab); the grader returns strict JSON.
-- **ai.js** — Groq chat completions: `tutorStructured` (rich JSON conversation) and `quizCall` (strict JSON). Plus OpenAI speech/transcription.
+- **ai.js** — chat completions for `tutorStructured` (rich JSON conversation) and `quizCall` (strict JSON), routed to either Groq or OpenAI per the Settings "Provider" toggle (both speak the same OpenAI-compatible API, so it's just a different base/key/model). Plus OpenAI speech/transcription, always.
 - **chatui.js** — the shared rich structured chat component (bubbles + translation toggle + corrections + tips + vocab chips + TTS + mic). Used by both the Free Conversation exercise and the lesson conversation phase.
 - **feedback.js** — the "flag an issue" widget dropped onto sentence/quiz/conjugation-match cards and (via `chatui.js`'s `flagCtx`) tutor chat bubbles; logs to `content_feedback` via store.js. See the "Flagging bad questions" bullet above.
 - **pages/** — runner (four-phase lesson flow), exercises (catalog of standalone practice games), editor (freeform CRUD + reorder), stats (metrics + CEFR estimate), settings.

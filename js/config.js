@@ -8,9 +8,18 @@
 // commit — no exceptions, no batching multiple changes under one patch
 // bump. The 1st/2nd numbers (major/minor) only change when Luke explicitly
 // says so; never bump those on your own judgment.
-export const VERSION = '1.0.16';
+export const VERSION = '1.0.17';
 
 export const DEFAULTS = {
+  // Which provider generates tutor conversation replies + quiz/sentence
+  // questions (js/ai.js's tutorStructured/quizCall). Both providers speak
+  // the same OpenAI-compatible chat-completions shape, so switching is just
+  // a different base/key/model triple — see ai.js's textProviderSettings.
+  // Groq is free; OpenAI (per Luke, 2026-08-09) generates noticeably better
+  // quality conversation/questions. Defaults to Groq so a fresh install
+  // costs nothing to try.
+  textProvider: 'groq', // 'groq' | 'openai'
+
   // Conversation tutor (Groq). Verify the current model string at console.groq.com.
   tutorModel: 'llama-3.3-70b-versatile',
   tutorTemperature: 0.7,
@@ -20,7 +29,15 @@ export const DEFAULTS = {
   quizModel: 'llama-3.3-70b-versatile',
   quizTemperature: 0.2,
 
-  // OpenAI TTS + transcription (per the existing app's stack).
+  // Conversation tutor + quiz generator, OpenAI variant — used instead of
+  // the Groq models above when textProvider === 'openai'. Verify the
+  // current model string at platform.openai.com.
+  openaiTutorModel: 'gpt-4o-mini',
+  openaiQuizModel: 'gpt-4o-mini',
+
+  // OpenAI TTS + transcription (per the existing app's stack) — unaffected
+  // by textProvider; these always use OpenAI regardless of which provider
+  // generates conversation/quiz text.
   ttsModel: 'gpt-4o-mini-tts',
   ttsVoice: 'nova',
   transcribeModel: 'whisper-1',
