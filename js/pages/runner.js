@@ -101,7 +101,13 @@ async function renderLanding() {
   session = null; quiz = null; sessionCtx = null; convo = null; phaseIdx = 0;
   const active = await store.getActiveUnit(CTX.userId);
   const sections = await store.getCurriculum(CTX.userId);
-  const flatUnits = sections.flatMap((s) => s.units.map((u) => ({ ...u, _section: s.title, section_id: s.section_id })));
+  // Filtered to status !== 'locked': "Review this unit" is for revisiting
+  // material already reached (available/in_progress/complete), not units
+  // that haven't unlocked yet. Reviewing a still-locked unit and clearing
+  // its mastery threshold on the spot could otherwise trigger maybePromote
+  // to unlock curriculum-order's real next unit early, out of turn (see
+  // IMPROVEMENT_LOG.md 2026-08-22 item 3).
+  const flatUnits = sections.flatMap((s) => s.units.map((u) => ({ ...u, _section: s.title, section_id: s.section_id }))).filter((u) => u.status !== 'locked');
 
   let progressInfo = '';
   if (active) {

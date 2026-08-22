@@ -314,7 +314,15 @@ export async function seedCurriculum(userId) {
 //     seed's current text. Still never touches status/mastery/position,
 //     and never deletes anything a user added that isn't in the seed.
 // Run this again any time seed.js changes — re-running is always safe.
-const norm = (s) => (s || '').trim().toLowerCase();
+// Strips trailing punctuation/ellipsis (both the Unicode ellipsis character
+// '…' and ASCII '...') in addition to trim+lowercase, so two vocab rows that
+// are the same phrase but differ only in how their trailing punctuation was
+// typed ("Wo ist…?" vs "Wo ist...?", "Ich nehme" vs "ich nehme...") normalize
+// to the same key instead of being treated as distinct words. Previously
+// trim+lowercase only — see IMPROVEMENT_LOG.md 2026-08-22 item 1, which found
+// 4 existing seed.js duplicates this gap let through undetected by
+// findVocabDuplicate/mergeDuplicateVocab and every prior scripted audit.
+const norm = (s) => (s || '').trim().toLowerCase().replace(/[.,!?…]+$/, '');
 
 export async function syncCurriculumToSeed(userId, opts = {}) {
   const refresh = !!opts.refreshMetadata;
@@ -759,15 +767,13 @@ export const createContentFeedback = (userId, fields) =>
 export const allContentFeedback = (userId) => selectWhere('content_feedback', { user_id: userId });
 
 // Every row is written with status 'open' (schema.sql: open | reviewed |
-// addressed) but until now nothing ever transitioned it out of 'open' or
-// filtered on it — recentFeedbackNotes ranked purely by recency, so a note
-// about a problem that's long since been fixed (in prompts.js, in seed.js,
-// wherever) would keep getting fed back into generation as a "known issue to
-// avoid" indefinitely. This marks a row resolved once its underlying content
-// issue has actually been addressed; no caller does so automatically yet, so
-// treat this as the hook for a future "mark reviewed" action (e.g. a small
-// admin affordance in Settings) rather than something wired to fire on its
-// own.
+// addressed); this marks one resolved once its underlying content issue has
+// actually been fixed. Wired to Settings' "Flagged content" admin card (see
+// pages/settings.js) via a "Mark resolved" button next to each open note —
+// recentFeedbackNotes skips anything not status 'open', so resolving a note
+// here stops it being fed back into generation as a "known issue to avoid"
+// once the problem it described has actually been addressed (see
+// IMPROVEMENT_LOG.md 2026-07-14 item 1 for when the Settings UI was added).
 export const resolveContentFeedback = (id, status = 'addressed') =>
   update('content_feedback', 'content_feedback_id', id, { status });
 

@@ -149,6 +149,13 @@ export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, onCorr
         if (!m || m.role !== 'tutor') return;
         let prevUser = '';
         for (let j = i - 1; j >= 0; j--) { if (messages[j].role === 'user') { prevUser = messages[j].content; break; } }
+        // alreadyFlagged/onFlagged: paint() fully re-mounts every bubble's
+        // flag slot from scratch on every turn (see the innerHTML rebuild
+        // above), so without remembering flagged state on the message
+        // itself, an already-flagged bubble would silently revert to the
+        // unflagged "⚑" button the moment the conversation continued,
+        // inviting a duplicate content_feedback row if flagged again — see
+        // IMPROVEMENT_LOG.md 2026-08-22 item 2.
         mountFeedbackFlag(slot, flagCtx.userId, {
           contextType: flagCtx.contextType,
           itemType: 'conversation',
@@ -156,7 +163,7 @@ export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, onCorr
           unitTitle: flagCtx.unitTitle || null,
           prompt: prevUser,
           answer: m.content,
-        });
+        }, { alreadyFlagged: !!m.flaggedAt, onFlagged: () => { m.flaggedAt = Date.now(); } });
       });
     }
     chatEl.scrollTop = chatEl.scrollHeight;

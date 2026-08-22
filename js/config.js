@@ -8,7 +8,7 @@
 // commit — no exceptions, no batching multiple changes under one patch
 // bump. The 1st/2nd numbers (major/minor) only change when Luke explicitly
 // says so; never bump those on your own judgment.
-export const VERSION = '1.0.17';
+export const VERSION = '1.0.18';
 
 export const DEFAULTS = {
   // Which provider generates tutor conversation replies + quiz/sentence

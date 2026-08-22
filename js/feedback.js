@@ -22,9 +22,23 @@ import * as store from './store.js';
 // payload: { contextType, itemType, unitId, unitTitle, prompt, answer } —
 // context stored alongside the note so a flagged row is understandable on
 // its own later, without needing to reconstruct what question it was.
-export function mountFeedbackFlag(container, userId, payload) {
+// opts: { alreadyFlagged, onFlagged } — alreadyFlagged renders straight into
+// the done state instead of the "⚑" button (for a card/bubble that's a fresh
+// DOM mount of something already flagged in a prior render — e.g. a chat
+// bubble re-rendered by chatui.js's paint() on every turn); onFlagged fires
+// once a submit succeeds, so the caller can remember that outside this
+// component's own re-created-per-mount state. Added to fix a bug where
+// re-rendering (chatui.js's paint(), called on every chat turn) always
+// re-mounted a fresh, un-flagged widget for every historical bubble even
+// after it had already been flagged, since neither the message data nor the
+// DOM carried any memory of it — see IMPROVEMENT_LOG.md 2026-08-22 item 2.
+export function mountFeedbackFlag(container, userId, payload, { alreadyFlagged = false, onFlagged } = {}) {
   if (!container) return;
-  renderClosed();
+  if (alreadyFlagged) renderDone(); else renderClosed();
+
+  function renderDone() {
+    container.innerHTML = `<span class="fb-flag-done">✓ Thanks — flagged for review.</span>`;
+  }
 
   function renderClosed() {
     container.innerHTML = `<button class="fb-flag-btn" type="button">⚑ Something wrong with this?</button>`;
@@ -51,7 +65,8 @@ export function mountFeedbackFlag(container, userId, payload) {
       btn.disabled = true; btn.textContent = 'Sending…';
       try {
         await store.createContentFeedback(userId, { ...payload, note });
-        container.innerHTML = `<span class="fb-flag-done">✓ Thanks — flagged for review.</span>`;
+        renderDone();
+        onFlagged?.();
       } catch (e) {
         container.innerHTML = `<span class="fb-flag-error">Couldn't send: ${esc(e.message)}</span>`;
       }
