@@ -518,7 +518,6 @@ export const SEED_CURRICULUM = {
             { german: 'wandern', english: 'to hike' },
             { german: 'der Verein', english: 'the club (e.g. sports club)' },
             { german: 'Lust haben', english: 'to feel like (doing something)', notes: 'Reused naturally: "Hast du Lust mitzukommen?"' },
-            { german: 'der Fitnessstudio', english: 'fitness studio' },
             { german: 'Rad fahren', english: 'to ride a bike' },
             { german: 'der Ball', english: 'ball', notes: 'commonly used for various sports' },
             { german: 'sich erholen', english: 'to recover', notes: 'used after exercise or a long day' },

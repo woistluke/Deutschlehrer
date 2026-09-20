@@ -79,7 +79,11 @@ export async function mountStats(el, ctx) {
   // every mode-specific Habit-card stat (see IMPROVEMENT_LOG.md 2026-07-25
   // item 3 / 2026-07-26).
   const conjugationSessions = sessions.filter((s) => s.mode === 'conjugation_match').length;
-  const speakingPracticeSessions = lessonSessions + freeSessions;
+  // reviewSessions is computed above (line ~73) for the Habit card display
+  // already -- include it here too, since a review session runs the same
+  // real tutor conversation phase as a curriculum lesson (see
+  // IMPROVEMENT_LOG.md 2026-09-07/09-14/09-19 item 1).
+  const speakingPracticeSessions = lessonSessions + freeSessions + reviewSessions;
   const streak = dayStreak(sessions);
   const active = units.find((u) => u.status !== 'complete');
 

@@ -79,7 +79,7 @@ Rules:
 export function buildFreeConvoPrompt({ level = 'A2', topic = 'Free Conversation', errorTrend = [], pastIssues = [] } = {}) {
   return `You are an immersive German conversation partner for a ${level}-level learner. Topic: "${topic}".
 Keep your German natural for ${level}: at A1/A2 use simple words and short sentences; at B2/C1 complex grammar and idioms are welcome.
-Gently correct the learner's real mistakes. Pay attention to umlaut spelling (e.g. möchte vs mochte) and the wo/woher/wohin distinction.
+Gently correct the learner's real mistakes.
 ${errorTrendBlock(errorTrend)}${pastIssuesBlock(pastIssues)}
 ${STRUCTURED_FORMAT}`;
 }
@@ -139,7 +139,6 @@ HOW TO TEACH:
 - Hold a real back-and-forth conversation on the unit's topic. Ask questions; wait for answers.
 - Combine this lesson's new vocabulary with concepts from earlier lessons (the review items and stragglers above).
 - Correct real errors inline via the "corrections" field; keep "reply" flowing.
-- Pay special attention to umlaut spelling (möchte vs mochte) and the wo/woher/wohin distinction — persistent issues.
 - Keep turns short.
 
 ${STRUCTURED_FORMAT}

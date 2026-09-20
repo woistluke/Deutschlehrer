@@ -93,8 +93,12 @@ export async function mountRunner(el, ctx) {
   await renderLanding();
   // Unmount hook consumed by app.js's navigate() — see closeActiveSessionRow
   // above for why this exists. Best-effort: a failure here shouldn't block
-  // navigating away, just log it.
-  return () => closeActiveSessionRow().catch((e) => console.error('Failed to close session on navigate-away:', e));
+  // navigating away, just log it. Also mutes any live conversation-phase
+  // audio (see chatui.js's mute(), added for the "Skip to quiz" control
+  // below) -- leaving Today via the top nav mid-conversation shouldn't let
+  // the tutor's spoken reply keep playing out from a chat the learner
+  // already navigated away from.
+  return () => { convo?.mute(); return closeActiveSessionRow().catch((e) => console.error('Failed to close session on navigate-away:', e)); };
 }
 
 async function renderLanding() {
@@ -724,8 +728,8 @@ function mountConvoPhase() {
       <div id="convo-rich"></div>
     </div>
     <div class="row" style="margin-top:12px">
-      <button class="btn primary" id="convo-continue">Continue to quiz →</button>
-      <span class="muted" style="font-size:.82rem;margin-left:8px">Chat as long as you like, then take the quiz.</span>
+      <button class="btn primary" id="convo-continue">Skip to quiz →</button>
+      <span class="muted" style="font-size:.82rem;margin-left:8px">Chat as long as you like, then take the quiz — skipping also stops the tutor's spoken audio, including the opening greeting, if it hasn't played yet.</span>
     </div>
   `;
   // flagCtx wires "⚑ Something wrong with this?" onto tutor bubbles (see
@@ -740,8 +744,18 @@ function mountConvoPhase() {
     onCorrections: recordConvoCorrections,
     flagCtx: { userId: CTX.userId, contextType: 'conversation', unitId: flagUnit?.unit_id || null, unitTitle: sessionCtx.unit?.title || null },
   });
+  // convo.open() below fires the tutor's opening greeting immediately, which
+  // is auto-spoken via chatui.js's say() the moment the reply comes back --
+  // sometimes Luke can't have that audio play (no headphones handy, a quiet
+  // room, etc.) and just wants to skip the conversation phase entirely. The
+  // button below is wired BEFORE open() resolves (open() itself only
+  // synchronously kicks off the async tutor call, it doesn't await it), so
+  // clicking it while the greeting is still in flight -- or even already
+  // playing -- calls chatui.js's mute() to kill/suppress that audio before
+  // moving on, instead of just changing phase and leaving the sound to play
+  // out on its own from a chat the learner already left.
+  zone.querySelector('#convo-continue').onclick = () => { convo.mute(); nextPhase(); };
   convo.open('Begin the conversation now with a natural German greeting tied to this unit.');
-  zone.querySelector('#convo-continue').onclick = nextPhase;
 }
 
 // The conversation phase is explicitly prompted (see buildUnitConvoPrompt's
@@ -1077,6 +1091,10 @@ async function closeActiveSessionRow() {
 }
 
 async function endSession() {
+  // Same reasoning as the navigate-away unmount hook in mountRunner above --
+  // "End session" mid-conversation shouldn't leave the tutor's audio playing
+  // into the landing screen.
+  convo?.mute();
   await closeActiveSessionRow();
   await renderLanding();
 }

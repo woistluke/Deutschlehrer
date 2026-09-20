@@ -30,6 +30,16 @@ export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, onCorr
   let vocab = [];      // de-duped collected vocab [{de,en}]
   let loading = false;
   let recorder = null, chunks = [];
+  // Muted by the host page (see the returned `mute()` below) when the
+  // learner skips straight past the conversation phase — e.g. runner.js's
+  // "Skip to quiz" control, added because the tutor's opening greeting is
+  // auto-spoken (see say() below) the moment the phase mounts, before the
+  // learner gets a chance to react, and sometimes they can't have audio
+  // play at all. Checked at the top of say() so a still-in-flight or
+  // about-to-start TTS call is skipped entirely (no wasted API call
+  // either), and currentAudio lets mute() also stop a clip already playing.
+  let muted = false;
+  let currentAudio = null;
 
   el.innerHTML = `
     <div class="chat rich" data-chat></div>
@@ -117,14 +127,25 @@ export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, onCorr
   // auto-speak-every-turn don't accumulate unreleased blob URLs/audio
   // buffers for the life of the tab.
   async function say(text) {
+    if (muted) return;
     try {
       const url = await speak(text);
+      if (muted) { URL.revokeObjectURL(url); return; } // muted while the TTS call was in flight
       const audio = new Audio(url);
-      const cleanup = () => URL.revokeObjectURL(url);
+      currentAudio = audio;
+      const cleanup = () => { URL.revokeObjectURL(url); if (currentAudio === audio) currentAudio = null; };
       audio.addEventListener('ended', cleanup, { once: true });
       audio.addEventListener('error', cleanup, { once: true });
       await audio.play();
     } catch (e) { status(e.message); }
+  }
+
+  // Stops any conversation audio dead and prevents further auto-speak for
+  // this chat instance -- see the `muted` declaration above for why this
+  // exists. Idempotent and safe to call even if nothing is playing.
+  function mute() {
+    muted = true;
+    if (currentAudio) { try { currentAudio.pause(); } catch {} currentAudio = null; }
   }
 
   function paint() {
@@ -179,6 +200,7 @@ export function createRichChat(el, { getSystemPrompt, onVocab = () => {}, onCorr
     hasHistory: () => messages.length > 0,
     getVocab: () => vocab,
     getHistory: () => messages,
+    mute,
   };
 }
 

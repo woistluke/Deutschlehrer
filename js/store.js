@@ -250,7 +250,14 @@ export async function getCefrMetrics(userId) {
 
   const lessonSessions = sessions.filter((s) => s.mode === 'curriculum').length;
   const freeSessions = sessions.filter((s) => s.mode === 'free').length;
-  const speakingPracticeSessions = lessonSessions + freeSessions;
+  // Review sessions ('Review this unit' / 'Review everything due') run the
+  // exact same four-phase flow as a curriculum lesson, including a real
+  // tutor conversation in phase 3 -- so they're just as much a speaking rep
+  // as a fresh curriculum lesson or Free Conversation. Previously left out
+  // here, which under-credited learners who lean on review sessions to
+  // close gaps (see IMPROVEMENT_LOG.md 2026-09-07/09-14/09-19 item 1).
+  const reviewSessions = sessions.filter((s) => s.mode === 'review').length;
+  const speakingPracticeSessions = lessonSessions + freeSessions + reviewSessions;
 
   return { masteredVocab, vocabTotal, unitsComplete, unitsTotal, accuracy, conversationSessions: speakingPracticeSessions, listeningAccuracy, listeningReps };
 }
